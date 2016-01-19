@@ -2161,6 +2161,10 @@ var Fabula = (function() {
                 prop = varlist[i];
                 if (trace) trace("import var " + id + '::' + prop);
                 parent.context[id + '::' + prop] = childlib.context[prop];
+                for(name in parent.applets) {
+                    target = parent.applets[name];
+                    target.context[id + '::' + prop] = childlib.context[prop];
+                }
             }
             for (name in parent.applets) {
                 var app = parent.applets[name];
