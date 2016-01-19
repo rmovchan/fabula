@@ -410,15 +410,14 @@ var Fabula = (function() {
 
         function evalFormula(formula, context, output) {
 
-            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|(\w+(?:::\w+))|(\".*?\")|('.*?')|(`..`)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(<=?)|(\/?=)|(>=?)/g;
+            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|(\w+)|(\".*?\")|('.*?')|(`..`)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(<=?)|(\/?=)|(>=?)/g;
             var match;
             var token;
             var result;
             var level = 0;
-
             function next() {
                 match = scanner.exec(formula);
-                if (match) {
+                if(match) {
                     token = match[0].trim();
                 } else {
                     token = null;
@@ -516,7 +515,7 @@ var Fabula = (function() {
                         // }
                         next();
                         while (token !== null) {
-                            if (!(token === "(" || token === "[" || token === "@" || token === ".")) break;
+                            if(!(token === "(" || token === "[" || token === "@" || token === ".")) break;
                             switch (token) {
                                 case "(":
                                     next();
@@ -579,14 +578,14 @@ var Fabula = (function() {
                             } else {
                                 v = parseSubject();
                                 res[prop] = v;
-                                while (token === ",") {
-                                    next();
-                                    prop = token;
-                                    next();
-                                    next();
-                                    v = parseSubject();
-                                    res[prop] = v;
-                                }
+                            }
+                            while (token === ",") {
+                                next();
+                                prop = token;
+                                next();
+                                next();
+                                v = parseSubject();
+                                res[prop] = v;
                             }
                             next();
                         }
@@ -597,6 +596,7 @@ var Fabula = (function() {
                 } else {
                     throw "Parse error";
                 }
+                // next();
             }
 
 
@@ -1193,7 +1193,7 @@ var Fabula = (function() {
                     case "foldl":
                         if (evalExpr(firstExpr(expr), context, result)) {
                             array = result.result;
-                            if (array.length === 0)
+                            if(array.length === 0)
                                 return false;
                             temp = findChild(expr, "into");
                             temp2 = temp.getAttribute("names").split(",");
@@ -1204,10 +1204,10 @@ var Fabula = (function() {
                             var bbb = temp2[1].trim();
                             temp3 = firstExpr(temp);
                             output.result = array[0];
-                            for (i = 1; i < array.length; i++) {
+                            for(i = 1; i < array.length; i++) {
                                 context2[aaa] = output.result;
                                 context2[bbb] = array[i];
-                                if (evalExpr(temp3, context2, result)) {
+                                if(evalExpr(temp3, context2, result)) {
                                     output.result = result.result;
                                 } else {
                                     return false;
@@ -1220,7 +1220,7 @@ var Fabula = (function() {
                     case "foldr":
                         if (evalExpr(firstExpr(expr), context, result)) {
                             array = result.result;
-                            if (array.length === 0)
+                            if(array.length === 0)
                                 return false;
                             temp = findChild(expr, "into");
                             temp2 = temp.getAttribute("names").split(",");
@@ -1231,10 +1231,10 @@ var Fabula = (function() {
                             var bbbb = temp2[1].trim();
                             temp3 = firstExpr(temp);
                             output.result = array[array.length - 1];
-                            for (i = array.length - 2; i >= 0; i--) {
+                            for(i = array.length - 2; i >= 0; i--) {
                                 context2[bbbb] = output.result;
                                 context2[aaaa] = array[i];
-                                if (evalExpr(temp3, context2, result)) {
+                                if(evalExpr(temp3, context2, result)) {
                                     output.result = result.result;
                                 } else {
                                     return false;
@@ -1547,7 +1547,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.click, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1562,7 +1562,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.focus, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1578,7 +1578,7 @@ var Fabula = (function() {
                 // applet.local[applet.eventname] = e.currentTarget.value;
                 if (engine.evalExpr(applet.events.blur, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     output.result(applet, id);
                     // applet.respond(id, output.result);
                 }
@@ -1594,7 +1594,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.change, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1609,7 +1609,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1624,7 +1624,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.mouseout, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1639,7 +1639,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.mousedown, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1654,7 +1654,7 @@ var Fabula = (function() {
                 }
                 if (engine.evalExpr(applet.events.mouseup, applet.local, output)) {
                     e.stopPropagation();
-                    e.preventDefault();
+                    // e.preventDefault();
                     // applet.respond(id, output.result);
                     output.result(applet, id);
                 }
@@ -1683,7 +1683,7 @@ var Fabula = (function() {
             var arg;
             var newid;
 
-            // if (this.instances.hasOwnProperty(id)) return;
+            if (this.instances.hasOwnProperty(id)) return;
 
             if (!this.initialized) this.initialize();
 
@@ -1716,7 +1716,7 @@ var Fabula = (function() {
                     } else {
                         this.instances[newid] = null;
                     }
-                    if (applet.trace) applet.trace("init " + applet.name + "::" + newid + " : " + format(this.instances[newid]));
+                    if(applet.trace) applet.trace("init " + applet.name + "::" + newid + " : " + format(this.instances[newid]));
                     for (var e in this.events) {
                         element.addEventListener(e, this.handlers[e]);
                     }
@@ -1724,16 +1724,7 @@ var Fabula = (function() {
                     element.id = newid;
                     if (engine.evalExpr(this.content, context, output)) {
                         element.innerHTML = output.result;
-                        for (appname in applets) {
-                            app = applets[appname];
-                            elements = element.getElementsByClassName(app.class());
-                            for (i = 0; i < elements.length; i++) {
-                                child = elements[i];
-                                // if (!child.id || !app.exists(child.id)) {
-                                app.create('', child, app.library.applets);
-                                // }
-                            }
-                        }
+                        // element.insertAdjacentHTML("beforeend", output.result);
                     }
                     for (var j in applet.extensions) {
                         try {
@@ -1747,6 +1738,24 @@ var Fabula = (function() {
                         if (engine.evalExpr(this.initActions[i], context, output)) {
                             var action = output.result;
                             action(this, newid);
+                        }
+                    }
+                    for (appname in applets) {
+                        app = applets[appname];
+                        elements = element.getElementsByClassName(app.class());
+                        for (i = 0; i < elements.length; i++) {
+                            child = elements[i];
+                            if(!child.id || !app.exists(child.id)) {
+                                app.create('', child, app.library.applets);
+                            }
+                            // id2 = child.getAttribute("id");
+                            // if (id2 !== null && id2 !== id) {
+                            //     if (app.exists(id2)) {
+                            //         // app.redraw(id2, applets);
+                            //     } else {
+                            //         app.create(id2, child, app.library.applets);
+                            //     }
+                            // }
                         }
                     }
                     lib.resume();
@@ -1802,44 +1811,36 @@ var Fabula = (function() {
                     context[this.statename] = output.result;
                     if (engine.evalExpr(this.content, context, output)) {
                         var element = document.getElementById(id);
+                        element.innerHTML = output.result;
+                        // element.insertAdjacentHTML("beforeend", output.result);
                         for (appname in applets) {
                             app = applets[appname];
                             elements = element.getElementsByClassName(app.class());
                             for (k = 0; k < elements.length; k++) {
                                 child = elements[k];
-                                if (child.hasAttribute("id")) {
+                                id2 = child.getAttribute("id");
+                                if (id2 && app.exists(id2)) {
+                                    app.destroy(id2);
+                                }
+                                app.create(id2, child, app.library.applets);
+                            }
+                        }
+                        if (applet.library.parent) {
+                            for (appname in applet.library.parent.applets) {
+                                app = applet.library.parent.applets[appname];
+                                elements = element.getElementsByClassName(app.class());
+                                for (k = 0; k < elements.length; k++) {
+                                    child = elements[k];
                                     id2 = child.getAttribute("id");
-                                    if (app.exists(id2)) {
-                                        app.destroy(id2);
+                                    if (id2 !== null && id2 !== id) {
+                                        if (app.exists(id2)) {
+                                            app.destroy(id2);
+                                        }
+                                        app.create(id2, child, app.library.applets);
                                     }
                                 }
                             }
                         }
-                        element.innerHTML = output.result;
-                        for (appname in applets) {
-                            app = applets[appname];
-                            elements = element.getElementsByClassName(app.class());
-                            for (k = 0; k < elements.length; k++) {
-                                child = elements[k];
-                                app.create('', child, app.library.applets);
-                            }
-                        }
-                        // if (applet.library.parent) {
-                        //     for (appname in applet.library.parent.applets) {
-                        //         app = applet.library.parent.applets[appname];
-                        //         elements = element.getElementsByClassName(app.class());
-                        //         for (k = 0; k < elements.length; k++) {
-                        //             child = elements[k];
-                        //             id2 = child.getAttribute("id");
-                        //             if (id2 !== null && id2 !== id) {
-                        //                 if (app.exists(id2)) {
-                        //                     app.destroy(id2);
-                        //                 }
-                        //                 app.create(id2, child, app.library.applets);
-                        //             }
-                        //         }
-                        //     }
-                        // }
                     }
                     for (j = 0; j < this.respAfter.length; j++) {
                         if (engine.evalExpr(this.respAfter[j], context, output)) {
@@ -1873,20 +1874,18 @@ var Fabula = (function() {
             if (trace) trace("send " + this.name + " : " + format(data));
             for (var i = 0; i < this.targets.length; i++) {
                 var target = this.targets[i];
-                if (target.channels.hasOwnProperty(this.name)) { //target applet has a listener for current channel?
-                    var local = {};
-                    for (prop in target.local) {
-                        local[prop] = target.local[prop];
-                    }
-                    if (trace) trace("receive " + target.name);
-                    local[target.channels[this.name].data] = data;
-                    for (var id2 in target.instances) {
-                        var state = target.instances[id2];
-                        local[target.statename] = state;
-                        if (engine.evalExpr(target.channels[this.name].expr, local, output)) {
-                            if (trace) trace("accept " + target.name + "::" + id2 + " : " + format(data));
-                            target.respond(id2, output.result);
-                        }
+                var local = {};
+                for (prop in target.applet.local) {
+                    local[prop] = target.applet.local[prop];
+                }
+                if (trace) trace("receive " + target.applet.name);
+                local[target.data] = data;
+                for (var id2 in target.applet.instances) {
+                    var state = target.applet.instances[id2];
+                    local[target.applet.statename] = state;
+                    if (engine.evalExpr(target.expr, local, output)) {
+                        if (trace) trace("accept " + target.applet.name + "::" + id2 + " : " + format(data));
+                        target.applet.respond(id2, output.result);
                     }
                 }
             }
@@ -1958,14 +1957,9 @@ var Fabula = (function() {
                 };
             },
             setattr: function(name, value) {
-                // var local = {};
-                // for (prop in context) {
-                //     local[prop] = context[prop];
-                // }
                 return function(applet, id) {
                     if (trace) trace("setattr " + applet.name + "::" + id + " name: " + name + " value: " + format(value));
                     var element = document.getElementById(id);
-                    // element.setAttribute(name, value);
                     element[name] = value;
                 };
             },
@@ -1998,14 +1992,12 @@ var Fabula = (function() {
                                 if (trace) trace("get-response: " + format(xmlhttp.responseText));
                                 local[resultname] = xmlhttp.responseText;
                                 if (engine.evalExpr(success, local, output)) {
-                                    //applet.respond(id, output.result);
                                     output.result(applet, id);
                                 }
                             } else {
                                 if (trace) trace("get-error: " + format(xmlhttp.responseText));
                                 local[msgname] = xmlhttp.responseText;
                                 if (engine.evalExpr(handler, local, output)) {
-                                    //applet.respond(id, output.result);
                                     output.result(applet, id);
                                 }
 
@@ -2032,14 +2024,12 @@ var Fabula = (function() {
                                 if (trace) trace("post-response: " + format(xmlhttp.responseText));
                                 local[resultname] = xmlhttp.responseText;
                                 if (engine.evalExpr(success, local, output)) {
-                                    //applet.respond(id, output.result);
                                     output.result(applet, id);
                                 }
                             } else {
                                 if (trace) trace("post-error: " + format(xmlhttp.responseText));
                                 local[msgname] = xmlhttp.responseText;
                                 if (engine.evalExpr(handler, local, output)) {
-                                    //applet.respond(id, output.result);
                                     output.result(applet, id);
                                 }
 
@@ -2074,14 +2064,12 @@ var Fabula = (function() {
                                         if (trace) trace("post-response: " + xmlhttp.responseText);
                                         local[resultname] = xmlhttp.responseText;
                                         if (engine.evalExpr(success, local, output)) {
-                                            //applet.respond(id, output.result);
                                             output.result(applet, id);
                                         }
                                     } else {
                                         if (trace) trace("post-error: " + xmlhttp.responseText);
                                         local[msgname] = xmlhttp.responseText;
                                         if (engine.evalExpr(handler, local, output)) {
-                                            //applet.respond(id, output.result);
                                             output.result(applet, id);
                                         }
 
@@ -2111,8 +2099,6 @@ var Fabula = (function() {
                 return '';
             }
         };
-        // this.imports = {};
-
         var engine = new ExprEngine(this.actions);
         var i;
         var j;
@@ -2155,9 +2141,10 @@ var Fabula = (function() {
         }
 
         for (name in lib.applets) {
-            var target = lib.applets[name];
-            for (prop in target.channels) {
+            for (prop in lib.applets[name].channels) {
+                var ch = lib.applets[name].channels[prop];
                 if (lib.channels.hasOwnProperty(prop)) {
+                    var target = {applet: lib.applets[name], data: ch.data, expr: ch.expr};
                     channel = lib.channels[prop];
                     if (trace) trace("applet " + name + " listens channel " + channel.name);
                     channel.targets.push(target);
@@ -2176,9 +2163,10 @@ var Fabula = (function() {
                 parent.context[id + '::' + prop] = childlib.context[prop];
             }
             for (name in parent.applets) {
-                target = parent.applets[name];
+                var app = parent.applets[name];
                 for (prop in childlib.channels) {
-                    if (target.channels.hasOwnProperty(id + '::' + prop)) { //parent's applet listens to child's channel?
+                    if (app.channels.hasOwnProperty(id + '::' + prop)) { //parent's applet listens to child's channel?
+                        target = {applet: app, data: app.channels[id + '::' + prop].data, expr: app.channels[id + '::' + prop].expr};
                         channel = childlib.channels[prop];
                         if (trace) trace("applet " + name + " listens channel " + id + '::' + channel.name);
                         channel.targets.push(target);
@@ -2194,17 +2182,8 @@ var Fabula = (function() {
                 prop = applist[i];
                 if (trace) trace("import applet " + id + '::' + prop);
                 parent.applets[id + '::' + prop] = childlib.applets[prop];
-                // childlib.applets[prop].name = lib.appmap[url][prop];
             }
 
-            // if (parent) {
-            //     parent.imports[id] = lib;
-            // }
-
-            // if (pending === 0) {
-            //     resume();
-            // }
-            // childlib.resume();
         };
 
         temp = findChildren(xml, "import");
@@ -2216,7 +2195,7 @@ var Fabula = (function() {
             var liburl = temp[i].getAttribute("library");
             var id = temp[i].getAttribute("id");
             // import variable
-            vars = findChildren(temp[i], "data");
+            vars = findChildren(temp[i], "var");
             for (j = 0; j < vars.length; j++) {
                 attr = vars[j].getAttribute("name");
                 varlist.push(attr);
@@ -2235,17 +2214,6 @@ var Fabula = (function() {
             }
             loadLib(liburl, doimport, lib, id, varlist, chlist, applist);
         }
-
-        // for (prop in extensions) {
-        //     var ext = extensions[prop];
-        //     for (i in ext.appext) {
-        //         ext.appext[i].init(lib.channels);
-        //         if (trace) trace("extension " + i + " initialized");
-        //         if (lib.applets.hasOwnProperty(i)) {
-        //             lib.applets[i].extensions = ext.appext[i];
-        //         }
-        //     }
-        // }
 
         lib.resume = function() {
             if (!lib.active) {
@@ -2286,21 +2254,21 @@ var Fabula = (function() {
                     id = element.getAttribute("id");
                     if (!id || !applet.exists(id)) {
                         // if (!applet.exists(id)) {
-                        applet.create('', element, lib.applets);
-                        // ids.push({
-                        //     id: id,
-                        //     applet: applet,
-                        //     element: element
-                        // });
+                            // applet.create(id, element, lib.applets);
+                            ids.push({
+                                id: id,
+                                applet: applet,
+                                element: element
+                            });
                         // }
                     }
                 }
             }
-            // for (i in ids) {
-            //     ids[i].applet.create(ids[i].id, ids[i].element, ids[i].applet.library.applets);
-            // if(lib != ids[i].applet.library)
-            //     ids[i].applet.library.resume();
-            // }
+            for (i in ids) {
+                ids[i].applet.create(ids[i].id, ids[i].element, ids[i].applet.library.applets);
+                // if(lib != ids[i].applet.library)
+                //     ids[i].applet.library.resume();
+            }
             if (lib.parent) lib.parent.resume();
             if (!this.active) {
                 // if (trace) trace("IDLE at " + (new Date()).toTimeString().slice(0, 8));
@@ -2332,11 +2300,8 @@ var Fabula = (function() {
         };
     }
 
-    // function AppExtension() {
-    // }
-
     return {
-        version: "0.24",
+        version: "0.25",
         seturl: function(url) {
             liburl = url;
         },
@@ -2344,17 +2309,6 @@ var Fabula = (function() {
             console.log("Fabula Interpreter v" + this.version);
             loadLib(liburl, null, null, null);
         },
-        // launch: function(url, ptrace) {
-        //     console.log("Fabula Interpreter v" + this.version);
-        //     // trace = console.log;
-        //     getLib(url, initlib, null);
-        // },
-        // trace: function(msg) {
-        //     console.log(msg);
-        // },
-        // idle: function(plugin) {
-        //     idle.push(plugin);
-        // },
         defineext: function(name, plugin) {
             var ext = new LibExtension();
             plugin(ext);
