@@ -1599,6 +1599,41 @@ var Fabula = (function() {
                     output.result(applet, id);
                 }
             },
+            input: function(e) {
+                var id = e.currentTarget.getAttribute("id");
+                var instance = applet.instances[id];
+                applet.local[applet.statename] = instance;
+                applet.local[applet.eventname] = e.target.value;
+                if (applet.trace) applet.trace("input " + applet.name + "::" + id + " : " + format(e.target.value));
+                if (applet.eventtimename !== null) {
+                    applet.local[applet.eventtimename] = (new Date());
+                }
+                if (engine.evalExpr(applet.events.input, applet.local, output)) {
+                    e.stopPropagation();
+                    // e.preventDefault();
+                    // applet.respond(id, output.result);
+                    output.result(applet, id);
+                }
+            },
+            // keypress: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     e = e || window.event;
+            //     var charCode = e.keyCode || e.which;
+            //     var charStr = String.fromCharCode(charCode);
+            //     applet.local[applet.eventname] = charStr;
+            //     if (applet.trace) applet.trace("keypress " + applet.name + "::" + id + " : " + charStr);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
+            //         e.stopPropagation();
+            //         // e.preventDefault();
+            //         // applet.respond(id, output.result);
+            //         output.result(applet, id);
+            //     }
+            // },
             mouseover: function(e) {
                 var id = e.currentTarget.getAttribute("id");
                 var instance = applet.instances[id];
@@ -1691,7 +1726,7 @@ var Fabula = (function() {
                 context[prop] = this.local[prop];
             }
 
-            if (element !== null) {
+            if (element) {
                 if (element.attributes["data-arg"]) {
                     arg = element.attributes["data-arg"].value;
                 } else {
@@ -1703,14 +1738,14 @@ var Fabula = (function() {
                 for (i = 0; i < this.initrandnames.length; i++) {
                     context[this.initrandnames[i]] = Math.random();
                 }
-                if (this.inittimename !== null) {
+                if (this.inittimename) {
                     context[this.inittimename] = Number(new Date());
                 }
-                if (this.initcontentname !== null) {
+                if (this.initcontentname) {
                     context[this.initcontentname] = element.innerHTML;
                 }
-                if (this.initState === null || engine.evalExpr(this.initState, context, output)) {
-                    if (this.initState !== null) {
+                if (!this.initState || engine.evalExpr(this.initState, context, output)) {
+                    if (this.initState) {
                         this.instances[newid] = output.result;
                         context[this.statename] = output.result;
                     } else {
@@ -1795,7 +1830,7 @@ var Fabula = (function() {
                 for (j = 0; j < this.resprandnames.length; j++) {
                     context[this.resprandnames[j]] = Math.random();
                 }
-                if (this.resptimename !== null) {
+                if (this.resptimename) {
                     context[this.resptimename] = (new Date());
                 }
                 if (applet.trace) applet.trace("proceed " + applet.name + "::" + id + " : " + format(queue[i]));
