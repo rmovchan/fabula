@@ -1,14 +1,11 @@
 /*
  * =======  Fabula Interpreter  =======
- *     © Aha! Factor Pty Ltd, 2015
+ *     © Aha! Factor Pty Ltd, 2016
  *       http://fabwebtools.com
  * ====================================
  */
 var Fabula = (function() {
-
-    var trace = function(msg) {
-        console.log(msg);
-    };
+    "use strict";
 
     var asyncRequest = function(method, uri, callback, postData) {
         var xhr = new XMLHttpRequest();
@@ -64,13 +61,12 @@ var Fabula = (function() {
         return result;
     }
 
-    function single(a, name) {
-        if (a.length > 1) {
-            throw "More than one " + name;
-        } else if (a.length === 0) {
-            throw "Missing " + name;
+    function clone(obj) {
+        var result = {};
+        for (var prop in obj) {
+            result[prop] = obj[prop];
         }
-        return a[0];
+        return result;
     }
 
     var flevel = 0;
@@ -136,13 +132,6 @@ var Fabula = (function() {
             url: window.location.href,
             params: parseQueryString(window.location.search.substring(1))
         },
-        // delay: function(arg) {
-        //     return function(applet, id) {
-        //         setTimeout(function() {
-        //             arg.action(applet, id);
-        //         }, arg.by);
-        //     };
-        // },
         math: {
             sin: function(x) {
                 return Math.sin(x);
@@ -398,26 +387,526 @@ var Fabula = (function() {
         },
     };
 
-    var resume;
-    var pending = 0;
+    function Applet(xml, lib) {
+        var trace = null;
+        if (xml.hasAttribute("trace") && xml.getAttribute("trace") === "on") {
+            trace = lib.trace;
+        }
+        this.engine = new Engine(lib, trace);
+        this.lib = lib;
+        this.name = xml.getAttribute("name");
+        this.trace = trace;
+        this.input = {};
+        this.initrandnames = [];
+        this.initActions = [];
+        this.resprandnames = [];
+        this.respActions = [];
+        this.extension = xml.getAttribute("extension");
+        this.next = 0;
+        this.instances = {};
+        this.channels = {};
+        this.events = {};
+        //parse applet's body
+        var children = getChildren(xml);
+        var temp;
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            switch (child.nodeName) {
+                case "model":
+                    this.statename = child.getAttribute("state");
+                    break;
+                case "view":
+                    this.content = firstExpr(child);
+                    break;
+                case "init":
+                    var id = child.getAttribute("id");
+                    // if (!id) {
+                    //     id = "id";
+                    // }
+                    this.idname = id;
+                    this.initargname = child.getAttribute("arg");
+                    // if (applet.initargname === null) {
+                    //     applet.initargname = "arg";
+                    // }
+                    temp = child.getAttribute("random");
+                    if (temp !== null) {
+                        this.initrandnames = temp.split(",");
+                    }
+                    this.initcontentname = child.getAttribute("content");
+                    this.inittimename = child.getAttribute("time");
+                    temp = findChildren(child, "state");
+                    if (temp.length === 1) {
+                        this.initState = firstExpr(temp[0]);
+                    } else {
+                        this.initState = null;
+                    }
+                    temp = findChildren(child, "actions");
+                    if (temp.length === 1) {
+                        this.initActions = getChildren(temp[0]);
+                    } else {
+                        this.initActions = [];
+                    }
+                    break;
+                case "proceed":
+                    this.inputname = findChild(child, "on").getAttribute("input");
+                    temp = child.getAttribute("random");
+                    if (temp !== null) {
+                        this.resprandnames = temp.split(",");
+                    }
+                    this.resptimename = child.getAttribute("time");
+                    temp = findChildren(child, "before");
+                    if (temp.length === 1) {
+                        this.respBefore = getChildren(temp[0]);
+                    } else {
+                        this.respBefore = [];
+                    }
+                    this.respState = firstExpr(findChild(child, "state"));
+                    temp = findChildren(child, "after");
+                    if (temp.length === 1) {
+                        this.respAfter = getChildren(temp[0]);
+                    } else {
+                        this.respAfter = [];
+                    }
+                    break;
+                case "events":
+                    this.eventname = child.getAttribute("data");
+                    temp = getChildren(child);
+                    for (j = 0; j < temp.length; j++) {
+                        this.events[temp[j].nodeName] = firstExpr(temp[j]);
+                    }
+                    this.eventtimename = child.getAttribute("time");
+                    break;
+                case "receive":
+                    temp = getChildren(child);
+                    for (var j = 0; j < temp.length; j++) {
+                        if (temp[j].hasAttribute("channel")) {
+                            this.channels[temp[j].getAttribute("channel")] = {
+                                data: child.getAttribute("data"),
+                                expr: firstExpr(temp[j])
+                            };
+                        }
+                    }
+                    break;
+                case "output":
+                    break;
+                default:
+                    throw "Error";
+            }
+        }
 
-    /* 
-        Run-time expression processing
+        // if (this.extension) {
+        //     if (this.extension in extensions) {
+        //         try {
+        //             extensions[this.extension].init(lib.channels);
+        //             if (trace) trace("extension " + this.extension + " initialized");
+        //         } catch (ex) {
+        //             if (trace) trace("Exception: " + ex.message);
+        //         }
+        //     } else {
+        //         if (trace) trace("extension " + this.extension + " not found");
+        //     }
+        // }
+    } //Applet
 
-    */
+    var handlers = function(applet) {
+        return {
+            click: function(e) {
+                var id = e.currentTarget.getAttribute("id");
+                var instance = applet.instances[id];
+                if (applet.trace) applet.trace("click " + applet.name + "::" + id);
+                var local = clone(applet.lib.globals);
+                if (applet.statename) {
+                    local[applet.statename] = instance;
+                }
+                if (applet.eventtimename) {
+                    local[applet.eventtimename] = (new Date());
+                }
+                var result = applet.engine.evalExpr(applet.events.click, local);
+                if (typeof result != 'undefined') {
+                    e.stopPropagation();
+                    result(applet, id);
+                }
+            },
+            // focus: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("focus " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.focus, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // },
+            // blur: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("blur " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     // applet.local[applet.eventname] = e.currentTarget.value;
+            //     if (engine.evalExpr(applet.events.blur, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // },
+            change: function(e) {
+                var id = e.currentTarget.getAttribute("id");
+                var instance = applet.instances[id];
+                var local = clone(applet.lib.globals);
+                if (applet.statename) {
+                    local[applet.statename] = instance;
+                }
+                local[applet.eventname] = e.target.value;
+                if (trace) trace("change " + applet.name + "::" + id + " : " + format(e.target.value));
+                if (applet.eventtimename) {
+                    local[applet.eventtimename] = (new Date());
+                }
+                var result = engine.evalExpr(applet.events.change, local);
+                if (typeof result != 'undefined') {
+                    e.stopPropagation();
+                    result(applet, id);
+                }
+            },
+            input: function(e) {
+                var id = e.currentTarget.getAttribute("id");
+                var instance = applet.instances[id];
+                var local = clone(lib.globals);
+                if (applet.statename) {
+                    local[applet.statename] = instance;
+                }
+                local[applet.eventname] = e.target.value;
+                if (trace) trace("input " + applet.name + "::" + id + " : " + format(e.target.value));
+                if (applet.eventtimename !== null) {
+                    local[applet.eventtimename] = (new Date());
+                }
+                var result = engine.evalExpr(applet.events.input, local);
+                if (typeof result != 'undefined') {
+                    e.stopPropagation();
+                    result(applet, id);
+                }
+            },
+            // keypress: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     e = e || window.event;
+            //     var charCode = e.keyCode || e.which;
+            //     var charStr = String.fromCharCode(charCode);
+            //     applet.local[applet.eventname] = charStr;
+            //     if (applet.trace) applet.trace("keypress " + applet.name + "::" + id + " : " + charStr);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
+            //         e.stopPropagation();
+            //         // e.preventDefault();
+            //         // applet.respond(id, output.result);
+            //         output.result(applet, id);
+            //     }
+            // },
+            // mouseover: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("mouseover " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // },
+            // mouseout: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("mouseout " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mouseout, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // },
+            // mousedown: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("mousedown " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mousedown, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // },
+            // mouseup: function(e) {
+            //     var id = e.currentTarget.getAttribute("id");
+            //     var instance = applet.instances[id];
+            //     if (applet.trace) applet.trace("mouseup " + applet.name + "::" + id);
+            //     applet.local[applet.statename] = instance;
+            //     if (applet.eventtimename !== null) {
+            //         applet.local[applet.eventtimename] = (new Date());
+            //     }
+            //     if (engine.evalExpr(applet.events.mouseup, applet.local, output)) {
+            //         e.stopPropagation();
+            //         output.result(applet, id);
+            //     }
+            // }
+        };
+    };
 
-    function ExprEngine(actions) {
+    Applet.prototype.class = function() {
+        var main = this.lib;
+        var cl = this.name;
+        while (main.parent) {
+            cl = main.id + '__' + cl;
+            main = main.parent;
+        }
+        return 'applet-' + cl;
+    };
 
-        function evalFormula(formula, context, output) {
+    Applet.prototype.create = function(element) {
+        var context = clone(this.lib.globals);
+        var arg, i, newid, result, app;
+        var trace = this.trace;
+        var h = handlers(this);
+        if (element) {
+            if (element.attributes["data-arg"]) {
+                arg = element.attributes["data-arg"].value;
+            } else {
+                arg = "";
+            }
+            context[this.initargname] = arg;
+            newid = this.class() + '-' + this.next++;
+            if (trace) trace("create " + this.name + "::" + newid + " : " + arg);
+            for (i = 0; i < this.initrandnames.length; i++) {
+                context[this.initrandnames[i]] = Math.random();
+            }
+            if (this.inittimename) {
+                context[this.inittimename] = Number(new Date());
+            }
+            if (this.initcontentname) {
+                context[this.initcontentname] = element.innerHTML;
+            }
+            context[this.idname] = newid;
+            result = this.initState ? this.engine.evalExpr(this.initState, context) : null;
+            if (typeof result != 'undefined') {
+                this.instances[newid] = result;
+                context[this.statename] = result;
+                if (trace) trace("init " + this.name + "::" + newid + " : " + format(this.instances[newid]));
+                for (var e in this.events) {
+                    element.addEventListener(e, h[e]);
+                }
+                element.id = newid;
+                if (this.content) { //render view
+                    result = this.engine.evalExpr(this.content, context);
+                    if (typeof result != 'undefined') {
+                        element.innerHTML = result;
+                    } else {
+                        if (trace) trace("view " + this.name + "::" + newid + "  failed");
+                    }
+                }
+                if (this.extension) {
+                    if (this.extension in this.lib.extensions) {
+                        try {
+                            this.lib.extensions[this.extension].attach(newid, element, arg);
+                        } catch (ex) {
+                            if (trace) trace("Exception: " + ex.message);
+                        }
+                    } else {
+                        if (trace) trace("extension " + this.extension + " not found");
+                    }
+                }
+                this.input[newid] = [];
+                for (i = 0; i < this.initActions.length; i++) {
+                    result = this.engine.evalExpr(this.initActions[i], context);
+                    if (typeof result != 'undefined') {
+                        result(this, newid);
+                    }
+                }
+                for (var appname in this.lib.applets) {
+                    app = this.lib.applets[appname];
+                    var elements = element.getElementsByClassName(app.class());
+                    for (i = 0; i < elements.length; i++) {
+                        var child = elements[i];
+                        if (!child.id || !app.exists(child.id)) {
+                            app.create(child);
+                        }
+                    }
+                }
+                this.lib.resume();
+            } else {
+                if (trace) trace("init " + this.name + "::" + newid + "  failed");
+            }
+        }
+    };
 
-            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|(\w+)|(\".*?\")|('.*?')|(`..`)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(<=?)|(\/?=)|(>=?)/g;
+    Applet.prototype.run = function(id) {
+        var i, j, k;
+        var instance = this.instances[id];
+        var action;
+        var queue = this.input[id];
+        var prop;
+        var appname;
+        var result;
+        var context = clone(this.lib.globals);
+        var trace = this.trace;
+        context[this.statename] = instance;
+        i = 0;
+        while (i < queue.length) {
+            context[this.inputname] = queue[i];
+            for (j = 0; j < this.resprandnames.length; j++) {
+                context[this.resprandnames[j]] = Math.random();
+            }
+            if (this.resptimename) {
+                context[this.resptimename] = (new Date());
+            }
+            if (trace) trace("proceed " + this.name + "::" + id + " : " + format(queue[i]));
+            for (j = 0; j < this.respBefore.length; j++) {
+                result = engine.evalExpr(this.respBefore[j], context);
+                if (typeof result != 'undefined') {
+                    result(this, id);
+                }
+            }
+            result = this.engine.evalExpr(this.respState, context);
+            if (typeof result != 'undefined') {
+                this.instances[id] = result;
+                if (this.content) { //render view
+                    context[this.idname] = id;
+                    context[this.statename] = result;
+                    result = this.engine.evalExpr(this.content, context);
+                    if (typeof result != 'undefined') {
+                        var element = document.getElementById(id);
+                        element.innerHTML = result;
+                        for (appname in this.lib.applets) {
+                            var app = this.lib.applets[appname];
+                            var elements = element.getElementsByClassName(app.class());
+                            //recreate children
+                            for (k = 0; k < elements.length; k++) {
+                                var child = elements[k];
+                                var id2 = child.getAttribute("id");
+                                if (id2 && app.exists(id2)) {
+                                    app.destroy(id2);
+                                }
+                                app.create(child);
+                            }
+                        }
+                        // if (lib.parent) {
+                        //     for (appname in lib.parent.applets) {
+                        //         app = applet.library.parent.applets[appname];
+                        //         elements = element.getElementsByClassName(app.class());
+                        //         for (k = 0; k < elements.length; k++) {
+                        //             child = elements[k];
+                        //             id2 = child.getAttribute("id");
+                        //             if (id2 !== null && id2 !== id) {
+                        //                 if (app.exists(id2)) {
+                        //                     app.destroy(id2);
+                        //                 }
+                        //                 app.create(id2, child, app.lib.applets);
+                        //             }
+                        //         }
+                        //     }
+                        // }
+                    }
+                }
+                for (j = 0; j < this.respAfter.length; j++) {
+                    result = this.engine.evalExpr(this.respAfter[j], context);
+                    if (typeof result != 'undefined') {
+                        result(this, id);
+                    }
+                }
+                if (this.extension) {
+                    if (this.extension in this.lib.extensions) {
+                        try {
+                            this.lib.extensions[this.extension].react(id, queue[i], context);
+                        } catch (ex) {
+                            if (trace) trace("Exception: " + ex.message);
+                        }
+                    } else {
+                        if (trace) trace("applet extension " + this.extension + " not found");
+                    }
+                }
+            }
+            i++;
+        }
+        this.input[id] = [];
+    };
+
+    Applet.prototype.exists = function(id) {
+        return id in this.instances;
+    };
+
+    Applet.prototype.respond = function(id, msg) {
+        if (id in this.input) {
+            this.input[id].push(msg);
+            this.lib.resume();
+        }
+    };
+
+    Applet.prototype.destroy = function(id) {
+        if (this.trace) this.trace("destroy " + this.name + "::" + id);
+        delete this.instances[id];
+        delete this.input[id];
+    };
+
+
+    function Channel(xml, lib) {
+        var trace = null;
+        if (xml.hasAttribute("trace") && xml.getAttribute("trace") === "on") {
+            trace = lib.trace;
+        }
+        this.lib = lib;
+        this.name = xml.getAttribute("name");
+        this.trace = trace;
+        this.targets = []; //will be added at library init
+        this.engine = new Engine(lib, trace);
+    }
+
+    Channel.prototype.send = function(data) {
+        var output = {};
+        if (this.trace) this.trace("send " + this.name + " : " + format(data));
+        for (var i = 0; i < this.targets.length; i++) {
+            var target = this.targets[i];
+            if (this.trace) this.trace("receive " + target.applet.name);
+            var local = clone(target.applet.lib.globals);
+            local[target.data] = data;
+            for (var id in target.applet.instances) {
+                var state = target.applet.instances[id];
+                local[target.applet.statename] = state;
+                var result = this.engine.evalExpr(target.expr, local);
+                if (typeof result != 'undefined') {
+                    if (this.trace) this.trace("accept " + target.applet.name + "::" + id + " : " + format(data));
+                    target.applet.respond(id, result);
+                }
+            }
+        }
+    };
+
+    /* Computation engine */
+    function Engine(lib, trace) {
+
+        var ser = new XMLSerializer();
+
+        function evalFormula(formula, context) {
+
+            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|((?:\w+::)?\w+)|(\".*?\")|('.*?')|(`..`)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(<=?)|(\/?=)|(>=?)/g;
             var match;
             var token;
             var result;
             var level = 0;
+
             function next() {
                 match = scanner.exec(formula);
-                if(match) {
+                if (match) {
                     token = match[0].trim();
                 } else {
                     token = null;
@@ -515,7 +1004,7 @@ var Fabula = (function() {
                         // }
                         next();
                         while (token !== null) {
-                            if(!(token === "(" || token === "[" || token === "@" || token === ".")) break;
+                            if (!(token === "(" || token === "[" || token === "@" || token === ".")) break;
                             switch (token) {
                                 case "(":
                                     next();
@@ -526,7 +1015,7 @@ var Fabula = (function() {
                                 case "[":
                                     next();
                                     v = parseSubject();
-                                    if (res.hasOwnProperty(v)) {
+                                    if (v in res) {
                                         res = res[v];
                                     } else {
                                         throw "Undefined index";
@@ -536,7 +1025,7 @@ var Fabula = (function() {
                                 case "@":
                                     next();
                                     v = parseFactor();
-                                    if (res.hasOwnProperty(v)) {
+                                    if (v in res) {
                                         res = res[v];
                                     } else {
                                         throw "Undefined key";
@@ -544,7 +1033,7 @@ var Fabula = (function() {
                                     break;
                                 case ".":
                                     next();
-                                    if (res.hasOwnProperty(token)) {
+                                    if (token in res) {
                                         res = res[token];
                                     } else {
                                         throw "Undefined property";
@@ -603,701 +1092,570 @@ var Fabula = (function() {
             try {
                 next();
                 result = parseRelation();
-                if (result === true || result === false) { //Fabula has no booleans
-                    // if (result) {
-                    //     if (trace) trace(formula + " -> success");
-                    // } else {
-                    //     if (trace) trace(formula + " -> failed");
-                    // }
-                    return result;
+                if (typeof result === 'boolean') { //Fabula has no booleans
+                    if (result) {
+                        if (trace) trace(formula + " -> success");
+                        return null;
+                    } else {
+                        if (trace) trace(formula + " -> failed");
+                        return undefined;
+                    }
                 }
-                output.result = result;
-                // if (trace) trace(formula + " -> " + format(result));
-                return true;
+                if (trace) trace(formula + " -> " + format(result));
+                return result;
             } catch (error) {
-                // if (trace) trace(formula + " -> failed");
-                return false;
+                if (trace) trace(formula + " -> failed");
+                return undefined;
             }
-        }
+        } //evalFormula
 
-        // function cast(value, type) {
-        //     var name;
-        //     var i;
-        //     var l;
-        //     var array = [];
-        //     var obj = {};
-
-        //     if (type.hasOwnProperty("integer") || type.hasOwnProperty("number")) {
-        //         if (typeof value === "number") {
-        //             return value;
-        //         } else {
-        //             throw "Fail";
-        //         }
-        //     } else if (type.hasOwnProperty("time")) {
-        //         if (typeof value === "number") {
-        //             return value;
-        //         } else if (typeof value === "object" && value.hasOwnProperty("getTime")) {
-        //             return value.getTime();
-        //         } else {
-        //             throw "Fail";
-        //         }
-        //     } else if (type.hasOwnProperty("string")) {
-        //         if (typeof value === "string") {
-        //             return value;
-        //         } else {
-        //             throw "Fail";
-        //         }
-        //     } else if (type.hasOwnProperty("array")) {
-        //         if (typeof value === "object" && value.hasOwnProperty("length")) {
-        //             l = value.length;
-        //             array.length = l;
-        //             for (i = 0; i < l; i++) {
-        //                 array[i] = cast(value[i], type.array);
-        //             }
-        //             return array;
-        //         } else {
-        //             throw "Fail";
-        //         }
-        //     } else if (type.hasOwnProperty("prop")) {
-        //         name = type.prop.name;
-        //         if (typeof value === "object" && value.hasOwnProperty(name)) {
-        //             return value[name];
-        //         } else {
-        //             throw "Fail";
-        //         }
-        //     } else if (type.hasOwnProperty("all")) {
-        //         l = type.all.length;
-        //         for (i = 0; i < l; i++) {
-        //             if (type.all[i].hasOwnProperty("prop") && value.hasOwnProperty(type.all[i].prop.name)) {
-        //                 obj[type.all[i].prop.name] = cast(value[type.all[i].prop.name], type.all[i].prop.type);
-        //             } else {
-        //                 throw "Fail";
-        //             }
-        //         }
-        //         return obj;
-        //     } else if (type.hasOwnProperty("any")) {
-        //         l = type.any.length;
-        //         for (i = 0; i < l; i++) {
-        //             if (type.any[i].hasOwnProperty("prop") && value.hasOwnProperty(type.any[i].prop.name)) {
-        //                 try {
-        //                     obj[type.any[i].prop.name] = cast(value[type.any[i].prop.name], type.any[i].prop.type);
-        //                     return obj;
-        //                 } catch (error) {}
-        //             }
-        //         }
-        //         throw "Fail";
-        //     }
-        //     return value;
-        // }
-
-        function evalExpr(expr, context, output) {
-            var stmt;
-            var where;
-            var i;
-            var j;
-            var l;
-            var result = {};
-            var context2 = {};
-            var output2 = {};
-            var prop;
-            var array = [];
-            var array2 = [];
-            var obj = {};
-            var parser;
-            var xmlDoc;
-            var temp;
-            var temp2;
-            var temp3;
-            var action;
-            var item;
-            var idxname;
-            var arg;
-            var argname;
-            var chame;
-            var ret;
-            var frmpat = /\[%(.*?)%\]/g;
-            var info;
-            var children;
-            var success;
-            var msgname;
-            var err;
-            var attrname;
-
+        var evalExpr = function(expr, context) {
             var frmval = function(match, p1) {
-                if (evalFormula(p1, context, output)) {
-                    return output.result;
+                var result = evalFormula(p1, context);
+                if (typeof result != 'undefined') {
+                    return result;
                 } else {
                     throw "Fail";
                 }
             };
+            var frmpat = /\[%(.*?)%\]/g;
 
-            try {
-                if (expr.nodeType == 3) {
-                    return evalFormula(expr.nodeValue.trim(), context, output);
-                }
+            if (expr.nodeType == 3) {
+                return evalFormula(expr.nodeValue.trim(), context);
+            }
 
-                // if(trace) trace("evalExpr " + expr.nodeName);
-
-                switch (expr.nodeName) {
-                    case "invalid":
-                        output.result = undefined;
-                        return false;
-                    case "text":
-                        children = getChildren(expr);
-                        var ser = new XMLSerializer();
-                        temp = "";
-                        for (i = 0; i < children.length; i++) {
-                            if (children[i].nodeType != 8) {
+            var algs = {
+                invalid: function(expr, context) {
+                    return undefined;
+                },
+                calc: function(expr, context) {
+                    var prop, stmt, result = {};
+                    var where = getChildren(expr);
+                    // var context2 = clone(context);
+                    for (var i = where.length - 1; i > 0; i--) {
+                        stmt = firstExpr(where[i]);
+                        if (!evalStmt(stmt, context, context)) {
+                            //     for (prop in result) {
+                            //         context2[prop] = result[prop];
+                            //     }
+                            // } else {
+                            if (trace) trace("calc -> failed");
+                            return undefined;
+                        }
+                    }
+                    return evalExpr(where[0], context);
+                },
+                text: function(expr, context) {
+                    var children = getChildren(expr);
+                    var temp = "";
+                    for (var i = 0; i < children.length; i++) {
+                        if (children[i].nodeType != 8) {
+                            if (children[i].nodeType === 1 && children[i].nodeName === "array") {
+                                var result = evalExpr(children[i], context);
+                                if (typeof result != 'undefined') {
+                                    for (var j = 0; j < result.length; j++) {
+                                        temp += result[j];
+                                    }
+                                } else {
+                                    return undefined;
+                                }
+                            } else {
                                 temp += ser.serializeToString(children[i]);
                             }
                         }
-                        // temp = ser.serializeToString(expr);
-                        // temp = expr.innerHTML.trim();
-                        output.result = temp.replace(frmpat, frmval);
-                        // if (trace) trace("text : " + temp + " -> " + format(output.result));
-                        break;
-                    case "eval":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            if (window.DOMParser) {
-                                parser = new DOMParser();
-                                xmlDoc = parser.parseFromString(result.result, "text/xml");
-                            } else {
-                                xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
-                                xmlDoc.async = false;
-                                xmlDoc.loadXML(result.result);
-                            }
-                            return evalExpr(xmlDoc.childNodes[0], context, output);
+                    }
+                    try {
+                        return temp.replace(frmpat, frmval);
+                    } catch (e) {
+                        if (trace) trace("text -> failed");
+                        return undefined;
+                    }
+                },
+                list: function(expr, context) {
+                    var temp = getChildren(expr);
+                    array.length = temp.length;
+                    for (var i = 0; i < temp.length; i++) {
+                        var result = evalExpr(temp[i], context);
+                        if (typeof result != 'undefined') {
+                            array[i] = result;
                         } else {
-                            output.result = undefined;
-                            return false;
+                            if (trace) trace("list -> failed");
+                            return undefined;
                         }
-                        break;
-                    case "cast":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            // temp = findChild(expr, "to");
-                            // info = analyzeType(firstExpr(temp), {
-                            //     types: [],
-                            //     vars: []
-                            // });
-                            // output.result = cast(result.result, info.type);
-                            output.result = result.result;
-                            // if (trace) trace("cast : " + format(output.result));
-                        } else {
-                            output.result = undefined;
-                            // if (trace) trace("cast : failed");
-                            return false;
-                        }
-                        break;
-                    case "list":
-                        temp = getChildren(expr);
-                        array.length = temp.length;
-                        for (i = 0; i < temp.length; i++) {
-                            if (evalExpr(temp[i], context, result)) {
-                                array[i] = result.result;
+                    }
+                    return array;
+                },
+                entries: function(expr, context) {
+                    var temp = findChildren(expr, "entry");
+                    var obj = {};
+                    for (var i = 0; i < temp.length; i++) {
+                        var temp2 = firstExpr(temp[i]);
+                        var result = evalExpr(temp2, context);
+                        if (typeof result != 'undefined') {
+                            temp2 = result;
+                            var temp3 = firstExpr(findChild(temp[i], "value"));
+                            result = evalExpr(temp3, context);
+                            if (typeof result != 'undefined') {
+                                obj[temp2] = result;
                             } else {
-                                output.result = undefined;
-                                // if (trace) trace("list : failed");
-                                return false;
+                                if (trace) trace("entries -> failed");
+                                return undefined;
+                            }
+                        } else {
+                            if (trace) trace("entries -> failed");
+                            return undefined;
+                        }
+                    }
+                    if (trace) trace("entries -> " + format(obj));
+                    return obj;
+                },
+                array: function(expr, context) {
+                    var temp = firstExpr(findChild(expr, "size"));
+                    var array = [];
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        var l = result;
+                        var item = findChild(expr, "item");
+                        var idxname = item.getAttribute("index");
+                        var context2 = clone(context);
+                        for (var i = 0; i < l; i++) {
+                            context2[idxname] = i;
+                            result = evalExpr(firstExpr(item), context2);
+                            if (typeof result != 'undefined') {
+                                array.push(result);
+                            } else {
+                                trace("array -> failed");
+                                return undefined;
                             }
                         }
-                        output.result = array;
-                        // if (trace) trace("list : " + format(result.result));
-                        break;
-                    case "entries":
-                        temp = findChildren(expr, "entry");
-                        for (i = 0; i < temp.length; i++) {
-                            temp2 = firstExpr(temp[i]);
-                            if (evalExpr(temp2, context, result)) {
-                                temp2 = result.result;
-                                temp3 = firstExpr(findChild(temp[i], "value"));
-                                if (evalExpr(temp3, context, result)) {
-                                    obj[temp2] = result.result;
+                    } else {
+                        if (trace) trace("array -> failed");
+                        return undefined;
+                    }
+                    if (trace) trace("array -> " + format(array));
+                    return array;
+                },
+                dictionary: function(expr, context) {
+                    var temp = firstExpr(findChild(expr, "size"));
+                    var obj = {};
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        temp = result;
+                        var item = findChild(expr, "entry");
+                        var idxname = item.getAttribute("index");
+                        var context2 = clone(context);
+                        for (i = 0; i < temp; i++) {
+                            context2[idxname] = i;
+                            result = evalExpr(firstExpr(item), context2);
+                            if (typeof result != 'undefined') {
+                                var temp2 = result; //key
+                                var temp3 = firstExpr(findChild(item, "value"));
+                                result = evalExpr(temp3, context2);
+                                if (typeof result != 'undefined') {
+                                    obj[temp2] = result; //value
                                 } else {
-                                    output.result = undefined;
-                                    // if (trace) trace("entries : failed");
-                                    return false;
+                                    if (trace) trace("dictionary -> failed");
+                                    return undefined;
                                 }
                             } else {
-                                output.result = undefined;
-                                // if (trace) trace("entries : failed");
-                                return false;
+                                if (trace) trace("dictionary -> failed");
+                                return undefined;
                             }
                         }
-                        output.result = obj;
-                        // if (trace) trace("entries : " + format(obj));
-                        break;
-                    case "array":
-                        temp = firstExpr(findChild(expr, "size"));
-                        if (evalExpr(temp, context, result)) {
-                            l = result.result;
-                            item = findChild(expr, "item");
-                            idxname = item.getAttribute("index");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
+                    } else {
+                        if (trace) trace("dictionary -> failed");
+                        return undefined;
+                    }
+                    if (trace) trace("dictionary -> " + format(obj));
+                    return obj;
+                },
+                keys: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    var array = [];
+                    if (typeof result != 'undefined') {
+                        for (var prop in result) {
+                            array.push(prop);
+                        }
+                        if (trace) trace("keys -> " + format(array));
+                        return array;
+                    } else {
+                        if (trace) trace("keys -> failed");
+                        return undefined;
+                    }
+                },
+                noitems: function(expr, context) {
+                    return [];
+                },
+                noentries: function(expr, context) {
+                    return {};
+                },
+                join: function(expr, context) {
+                    var temp = getChildren(expr);
+                    var l = 0;
+                    for (var i = 0; i < temp.length; i++) {
+                        var result = evalExpr(temp[i], context);
+                        if (typeof result != 'undefined') {
+                            temp[i] = result;
+                            l += result.length;
+                        }
+                    }
+                    var array = [];
+                    array.length = l;
+                    l = 0;
+                    for (i = 0; i < temp.length; i++) {
+                        for (var j = 0; j < temp[i].length; j++) {
+                            array[l] = temp[i][j];
+                            l++;
+                        }
+                    }
+                    if (trace) trace("join -> " + format(array));
+                    return array;
+                },
+                merge: function(expr, context) {
+                    var temp = getChildren(expr);
+                    var l = 0;
+                    var obj = {};
+                    for (var i = 0; i < temp.length; i++) {
+                        var result = evalExpr(temp[i], context);
+                        if (typeof result != 'undefined') {
+                            for (var prop in result) {
+                                obj[prop] = result[prop];
                             }
-                            for (i = 0; i < l; i++) {
-                                context2[idxname] = i;
-                                if (evalExpr(firstExpr(item), context2, result)) {
-                                    array.push(result.result);
+                        }
+                    }
+                    if (trace) trace("merge -> " + format(obj));
+                    return obj;
+                },
+                alter: function(expr, context) {
+                    var temp = firstExpr(expr);
+                    var obj = {};
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        for (var prop in result) {
+                            obj[prop] = result[prop];
+                        }
+                        temp = findChildren(expr, "set");
+                        for (var i = 0; i < temp.length; i++) {
+                            result = evalExpr(firstExpr(temp[i]), context);
+                            if (typeof result != 'undefined') {
+                                prop = temp[i].getAttribute("prop");
+                                obj[prop] = result;
+                            } else {
+                                return undefined;
+                            }
+                        }
+                        if (trace) trace("alter -> " + format(obj));
+                        return obj;
+                    } else {
+                        if (trace) trace("alter -> failed");
+                        return undefined;
+                    }
+                },
+                closure: function(expr, context) {
+                    var arg = findChild(expr, "arg");
+                    var argname = arg.getAttribute("name");
+                    var ret = firstExpr(findChild(expr, "return"));
+                    var context2 = clone(context);
+                    return function(x) {
+                        context2[argname] = x;
+                        var result = evalExpr(ret, context2);
+                        if (typeof result != 'undefined') {
+                            if (trace) trace("<closure>(" + format(x) + ") -> " + format(result));
+                            return result;
+                        } else {
+                            if (trace) trace("<closure>(" + format(x) + ") -> failed");
+                            throw "Fail";
+                        }
+                    };
+                },
+                wrap: function(expr, context) {
+                    var output = {};
+                    if (evalStmt(firstExpr(expr), context, output)) {
+                        return output;
+                    } else {
+                        return undefined;
+                    }
+                },
+                find: function(expr, context) {
+                    var temp = firstExpr(expr);
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        array = result;
+                        temp = findChild(expr, "such");
+                        var argname = temp.getAttribute("item");
+                        var context2 = clone(context);
+                        var output = {};
+                        for (var i = 0; i < array.length; i++) {
+                            context2[argname] = array[i];
+                            if (evalStmt(firstExpr(temp), context2, output)) {
+                                if (trace) trace("find -> " + format(array[i]));
+                                return array[i];
+                            }
+                        }
+                        if (trace) trace("find -> failed");
+                        return undefined;
+                    }
+                    if (trace) trace("find -> failed");
+                    return undefined;
+                },
+                filter: function(expr, context) {
+                    var temp = firstExpr(expr);
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        var array2 = [];
+                        var output = {};
+                        array = result;
+                        temp = findChild(expr, "such");
+                        var argname = temp.getAttribute("item");
+                        var context2 = clone(context);
+                        for (var i = 0; i < array.length; i++) {
+                            context2[argname] = array[i];
+                            if (evalStmt(firstExpr(temp), context2, output)) {
+                                array2.push(array[i]);
+                            }
+                        }
+                        if (trace) trace("filter -> " + format(array2));
+                        return array2;
+                    } else {
+                        if (trace) trace("filter -> failed");
+                        return undefined;
+                    }
+                },
+                count: function(expr, context) {
+                    var temp = firstExpr(expr);
+                    var count = 0;
+                    var result = evalExpr(temp, context);
+                    if (typeof result != 'undefined') {
+                        var output = {};
+                        array = result;
+                        temp = findChild(expr, "such");
+                        var argname = temp.getAttribute("item");
+                        var context2 = clone(context);
+                        for (var i = 0; i < array.length; i++) {
+                            context2[argname] = array[i];
+                            if (evalStmt(firstExpr(temp), context2, output)) {
+                                count++;
+                            }
+                        }
+                        if (trace) trace("count -> " + count);
+                        return count;
+                    } else {
+                        if (trace) trace("count -> failed");
+                        return undefined;
+                    }
+                },
+                foldl: function(expr, context) {
+                    return undefined;
+                },
+                foldr: function(expr, context) {
+                    return undefined;
+                },
+                sort: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        var array = result.slice();
+                        var temp = findChild(expr, "with");
+                        var temp2 = temp.getAttribute("names").split(",");
+                        var context2 = clone(context);
+                        var aa = temp2[0].trim();
+                        var bb = temp2[1].trim();
+                        var temp3 = firstExpr(temp);
+                        var sortfun = function(a, b) {
+                            var output = {};
+                            context2[aa] = a;
+                            context2[bb] = b;
+                            var result = evalStmt(temp3, context2, output);
+                            if (typeof result != 'undefined') {
+                                return -1;
+                            } else {
+                                context2[aa] = b;
+                                context2[bb] = a;
+                                result = evalStmt(temp3, context2, output);
+                                if (typeof result != 'undefined') {
+                                    return 1;
                                 } else {
-                                    output.result = undefined;
-                                    // trace("array : failed");
-                                    return false;
+                                    return 0;
                                 }
-                            }
-                        } else {
-                            output.result = undefined;
-                            // if (trace) trace("array : failed");
-                            return false;
-                        }
-                        output.result = array;
-                        // if (trace) trace("array : " + format(array));
-                        break;
-                    case "dictionary":
-                        temp = firstExpr(findChild(expr, "size"));
-                        if (evalExpr(temp, context, result)) {
-                            temp = result.result;
-                            item = findChild(expr, "entry");
-                            idxname = item.getAttribute("index");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            for (i = 0; i < temp; i++) {
-                                context2[idxname] = i;
-                                if (evalExpr(firstExpr(item), context2, result)) {
-                                    temp2 = result.result; //key
-                                    temp3 = firstExpr(findChild(item, "value"));
-                                    if (evalExpr(temp3, context2, result)) {
-                                        obj[temp2] = result.result; //value
-                                    } else {
-                                        output.result = undefined;
-                                        // if (trace) trace("dictionary : failed");
-                                        return false;
-                                    }
-                                } else {
-                                    output.result = undefined;
-                                    // if (trace) trace("dictionary : failed");
-                                    return false;
-                                }
-                            }
-                        } else {
-                            output.result = undefined;
-                            // if (trace) trace("dictionary : failed");
-                            return false;
-                        }
-                        output.result = obj;
-                        // if (trace) trace("dictionary : " + format(obj));
-                        break;
-                    case "keys":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            for (prop in result.result) {
-                                array.push(prop);
-                            }
-                            output.result = array;
-                            // if (trace) trace("keys : " + format(array));
-                        } else {
-                            // if (trace) trace("keys : failed");
-                            return false;
-                        }
-                        break;
-                    case "range":
-                        temp = firstExpr(findChild(expr, "from"));
-                        if (evalExpr(temp, context, result)) {
-                            temp = result.result;
-                            temp2 = firstExpr(findChild(expr, "to"));
-                            if (evalExpr(temp2, context, result) && result.result >= temp) {
-                                temp2 = result.result;
-                                array.length = temp2 - temp;
-                                for (i = temp; i < temp2; i++) {
-                                    array[i - temp] = i;
-                                }
-                            } else {
-                                output.result = undefined;
-                                return false;
-                            }
-                        } else {
-                            output.result = undefined;
-                            return false;
-                        }
-                        output.result = array;
-                        break;
-                    case "noitems":
-                        output.result = [];
-                        break;
-                    case "noentries":
-                        output.result = {};
-                        break;
-                    case "join":
-                        temp = getChildren(expr);
-                        // l = 0;
-                        for (i = 0; i < temp.length; i++) {
-                            if (evalExpr(temp[i], context, output)) {
-                                temp[i] = output.result;
-                                // l += output.result.length;
-                            }
-                        }
-                        // array.length = l;
-                        l = 0;
-                        for (i = 0; i < temp.length; i++) {
-                            for (j = 0; j < temp[i].length; j++) {
-                                array[l] = temp[i][j];
-                                l++;
-                            }
-                        }
-                        output.result = array;
-                        break;
-                    case "merge":
-                        temp = getChildren(expr);
-                        l = 0;
-                        for (i = 0; i < temp.length; i++) {
-                            if (evalExpr(temp[i], context, output)) {
-                                for (prop in output.result) {
-                                    obj[prop] = output.result[prop];
-                                }
-                            }
-                        }
-                        output.result = obj;
-                        break;
-                    case "alter":
-                        temp = firstExpr(expr);
-                        if (evalExpr(temp, context, output)) {
-                            for (prop in output.result) {
-                                obj[prop] = output.result[prop];
-                            }
-                            temp = findChildren(expr, "set");
-                            for (i = 0; i < temp.length; i++) {
-                                if (evalExpr(firstExpr(temp[i]), context, output)) {
-                                    prop = temp[i].getAttribute("prop");
-                                    obj[prop] = output.result;
-                                } else {
-                                    return false;
-                                }
-                            }
-                            output.result = obj;
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "calc":
-                        where = getChildren(expr);
-                        for (prop in context) {
-                            context2[prop] = context[prop];
-                        }
-                        for (i = where.length - 1; i > 0; i--) {
-                            stmt = firstExpr(where[i]);
-                            if (evalStmt(stmt, context2, result)) {
-                                for (prop in result) {
-                                    context2[prop] = result[prop];
-                                }
-                            } else {
-                                output.result = undefined;
-                                return false;
-                            }
-                        }
-                        return evalExpr(where[0], context2, output);
-                    case "closure":
-                        arg = findChild(expr, "arg");
-                        argname = arg.getAttribute("name");
-                        ret = firstExpr(findChild(expr, "return"));
-                        for (prop in context) {
-                            context2[prop] = context[prop];
-                        }
-                        output.result = function(x) {
-                            var funcout = {};
-                            context2[argname] = x;
-                            if (evalExpr(ret, context2, funcout)) {
-                                // if (trace) trace("invoke(" + format(x) + ") -> " + format(funcout.result));
-                                return funcout.result;
-                            } else {
-                                // if (trace) trace("invoke(" + format(x) + ") -> failed");
-                                throw "Fail";
                             }
                         };
-                        break;
-                    case "wrap":
-                        for (prop in context) {
-                            context2[prop] = context[prop];
-                        }
-                        for (i = 0; i < stmt.childNodes.length; i++) {
-                            if (stmt.childNodes[i].nodeType != 3) {
-                                if (evalStmt(stmt.childNodes[i], context2, result)) {
-                                    for (prop in result) {
-                                        context2[prop] = result[prop];
-                                        output2[prop] = result[prop];
-                                    }
-                                    result = {};
-                                } else {
-                                    return false;
-                                }
-                            }
-                        }
-                        output.result = output2;
-                        break;
-                    case "find":
-                        temp = firstExpr(expr);
-                        if (evalExpr(temp, context, output)) {
-                            array = output.result;
-                            temp = findChild(expr, "such");
-                            argname = temp.getAttribute("item");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            for (i = 0; i < array.length; i++) {
-                                context2[argname] = array[i];
-                                if (evalStmt(firstExpr(temp), context2, output2)) {
-                                    output.result = array[i];
-                                    // if (trace) trace("find : " + format(output.result));
-                                    return true;
-                                }
-                            }
-                            // if (trace) trace("find : failed");
-                            return false;
-                        }
-                        // if (trace) trace("find : failed");
-                        return false;
-                    case "filter":
-                        temp = firstExpr(expr);
-                        if (evalExpr(temp, context, output)) {
-                            array = output.result;
-                            temp = findChild(expr, "such");
-                            argname = temp.getAttribute("item");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            for (i = 0; i < array.length; i++) {
-                                context2[argname] = array[i];
-                                if (evalStmt(firstExpr(temp), context2, output2)) {
-                                    array2.push(output2.result);
-                                }
-                            }
-                            output.result = array2;
-                            // if (trace) trace("findall : " + array2.length);
-                            return true;
-                        }
-                        return false;
-                    case "count":
-                        temp = firstExpr(expr);
-                        if (evalExpr(temp, context, output)) {
-                            array = output.result;
-                            temp = findChild(expr, "such");
-                            argname = temp.getAttribute("item");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            var count = 0;
-                            for (i = 0; i < array.length; i++) {
-                                context2[argname] = array[i];
-                                if (evalStmt(firstExpr(temp), context2, output2)) {
-                                    count++;
-                                }
-                            }
-                            output.result = count;
-                            // if (trace) trace("count : " + count);
-                            return true;
-                        }
-                        return false;
-                    case "delay":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            action = result.result;
-                            temp = firstExpr(findChild(expr, "by"));
-                            if (evalExpr(temp, context, result)) {
-                                output.result = actions.delay(action, result.result);
-                            } else {
-                                return false;
-                            }
+                        if (trace) trace("sort -> success");
+                        return array.sort(sortfun);
+                    } else {
+                        if (trace) trace("sort -> failed");
+                        return undefined;
+                    }
+                },
+                delay: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        action = result;
+                        var temp = findChild(expr, "by");
+                        result = evalExpr(temp, context);
+                        if (typeof result != 'undefined') {
+                            if (trace) trace("delay -> success");
+                            return function(applet, id) {
+                                setTimeout(function() {
+                                    action(applet, id);
+                                }, result);
+                            };
                         } else {
-                            return false;
+                            if (trace) trace("delay -> failed");
+                            return undefined;
                         }
-                        break;
-                    case "take":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            output.result = actions.take(result.result);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "sort":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            array = result.result.slice();
-                            temp = findChild(expr, "with");
-                            temp2 = temp.getAttribute("names").split(",");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
+                    } else {
+                        if (trace) trace("delay -> failed");
+                        return undefined;
+                    }
+                },
+                take: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        if (trace) trace("take -> success");
+                        return function(applet, id) {
+                            if (trace) trace("perform take " + applet.name + "::" + id);
+                            applet.respond(id, result);
+                        };
+                    } else {
+                        if (trace) trace("take -> failed");
+                        return undefined;
+                    }
+                },
+                each: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        var list = result;
+                        if (trace) trace("each -> success");
+                        return function(applet, id) {
+                            if (trace) trace("perform each " + applet.name + "::" + id);
+                            for (var i = 0; i < list.length; i++) {
+                                list[i](applet, id);
                             }
-                            var aa = temp2[0].trim();
-                            var bb = temp2[1].trim();
-                            temp3 = firstExpr(temp);
-                            var sortfun = function(a, b) {
-                                context2[aa] = a;
-                                context2[bb] = b;
-                                if (evalStmt(temp3, context2, output)) {
-                                    return -1;
-                                } else {
-                                    context2[aa] = b;
-                                    context2[bb] = a;
-                                    if (evalStmt(temp3, context2, output)) {
-                                        return 1;
+                        };
+                    } else {
+                        if (trace) trace("each -> failed");
+                        return undefined;
+                    }
+                },
+                send: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        var channel = lib.channels[expr.getAttribute("channel")];
+                        return function(applet, id) {
+                            if (trace) trace("perform send " + applet.name + "::" + id + " data " + format(result) + " to " + expr.getAttribute("channel"));
+                            channel.send(result);
+                        };
+                    } else {
+                        if (trace) trace("send -> failed");
+                        return undefined;
+                    }
+                },
+                get: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        var url = result;
+                        var succexpr = findChild(expr, "success");
+                        var resultname = succexpr.getAttribute("result");
+                        var errexpr = findChild(expr, "error");
+                        var msgname = errexpr.getAttribute("message");
+                        return function(applet, id) {
+                            if (trace) trace("perform get " + applet.name + "::" + id);
+                            var xmlhttp = new XMLHttpRequest();
+                            xmlhttp.onreadystatechange = function() {
+                                if (xmlhttp.readyState == 4) {
+                                    var local = clone(lib.globals);
+                                    local[applet.statename] = applet.instances[id];
+                                    if (xmlhttp.status == 200) {
+                                        if (trace) trace("get-response: " + format(xmlhttp.responseText));
+                                        local[resultname] = xmlhttp.responseText;
+                                        result = evalExpr(succexpr, local);
+                                        if (typeof result != 'undefined') {
+                                            if (trace) trace("get success processing");
+                                            result(applet, id);
+                                        }
                                     } else {
-                                        return 0;
+                                        if (trace) trace("get-error: " + format(xmlhttp.responseText));
+                                        local[msgname] = xmlhttp.responseText;
+                                        result = evalExpr(errexpr, local);
+                                        if (typeof result != 'undefined') {
+                                            if (trace) trace("get error processing");
+                                            result(applet, id);
+                                        }
+
                                     }
                                 }
                             };
-                            output.result = array.sort(sortfun);
+                            xmlhttp.open("GET", url, true);
+                            xmlhttp.send();
+                        };
+                    } else {
+                        if (trace) trace("get -> failed");
+                        return undefined;
+                    }
+                },
+                post: function(expr, context) {
+                    var result = evalExpr(firstExpr(expr), context);
+                    if (typeof result != 'undefined') {
+                        var url = result;
+                        result = evalExpr(findChild(expr, "params"), context);
+                        var params;
+                        if (typeof result != 'undefined') {
+                            params = result;
                         } else {
-                            return false;
+                            if (trace) trace("post -> failed");
+                            return undefined;
                         }
-                        break;
-                    case "each":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            output.result = actions.each(result.result);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "send":
-                        chname = expr.getAttribute("channel");
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            output.result = actions.send(chname, result.result);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "get":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            temp = findChild(expr, "success");
-                            argname = temp.getAttribute("result");
-                            success = firstExpr(temp);
-                            temp = findChild(expr, "error");
-                            msgname = temp.getAttribute("message");
-                            err = firstExpr(temp);
-                            output.result = actions.get(result.result, argname, success, msgname, err, context);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "post":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            temp = findChild(expr, "params");
-                            params = firstExpr(temp);
-                            temp = findChild(expr, "success");
-                            argname = temp.getAttribute("result");
-                            success = firstExpr(temp);
-                            temp = findChild(expr, "error");
-                            msgname = temp.getAttribute("message");
-                            err = firstExpr(temp);
-                            output.result = actions.post(result.result, params, argname, success, msgname, err, context);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "foldl":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            array = result.result;
-                            if(array.length === 0)
-                                return false;
-                            temp = findChild(expr, "into");
-                            temp2 = temp.getAttribute("names").split(",");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            var aaa = temp2[0].trim();
-                            var bbb = temp2[1].trim();
-                            temp3 = firstExpr(temp);
-                            output.result = array[0];
-                            for(i = 1; i < array.length; i++) {
-                                context2[aaa] = output.result;
-                                context2[bbb] = array[i];
-                                if(evalExpr(temp3, context2, result)) {
-                                    output.result = result.result;
-                                } else {
-                                    return false;
-                                }
-                            }
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "foldr":
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            array = result.result;
-                            if(array.length === 0)
-                                return false;
-                            temp = findChild(expr, "into");
-                            temp2 = temp.getAttribute("names").split(",");
-                            for (prop in context) {
-                                context2[prop] = context[prop];
-                            }
-                            var aaaa = temp2[0].trim();
-                            var bbbb = temp2[1].trim();
-                            temp3 = firstExpr(temp);
-                            output.result = array[array.length - 1];
-                            for(i = array.length - 2; i >= 0; i--) {
-                                context2[bbbb] = output.result;
-                                context2[aaaa] = array[i];
-                                if(evalExpr(temp3, context2, result)) {
-                                    output.result = result.result;
-                                } else {
-                                    return false;
-                                }
-                            }
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "setform":
-                        temp = firstExpr(findChild(expr, "url"));
-                        if (evalExpr(temp, context, result)) {
-                            var url = result.result;
-                            temp = firstExpr(findChild(expr, "formname"));
-                            if (evalExpr(temp, context, result)) {
-                                var formname = result.result;
-                                temp = firstExpr(findChild(expr, "submit"));
-                                if (evalExpr(temp, context, result)) {
-                                    var submit = result.result;
-                                    temp = findChild(expr, "success");
-                                    argname = temp.getAttribute("result");
-                                    success = firstExpr(temp);
-                                    temp = findChild(expr, "error");
-                                    msgname = temp.getAttribute("message");
-                                    err = firstExpr(temp);
-                                    output.result = actions.setform(url, formname, submit, argname, success, msgname, err, context);
-                                } else {
-                                    return false;
-                                }
-                            } else {
-                                return false;
-                            }
-                        } else {
-                            return false;
-                        }
-                        break;
-                    case "setattr":
-                        attrname = expr.getAttribute("name");
-                        if (evalExpr(firstExpr(expr), context, result)) {
-                            output.result = actions.setattr(attrname, result.result);
-                        } else {
-                            return false;
-                        }
-                        break;
-                    default:
-                        return false;
-                }
-                return true;
-            } catch (error) {
-                // if (trace) trace(expr.nodeName + " -> failed");
-                return false;
-            }
-        }
+                        var succexpr = findChild(expr, "success");
+                        var resultname = succexpr.getAttribute("result");
+                        var errexpr = findChild(expr, "error");
+                        var msgname = errexpr.getAttribute("message");
+                        return function(applet, id) {
+                            if (trace) trace("perform post " + applet.name + "::" + id);
+                            var xmlhttp = new XMLHttpRequest();
+                            xmlhttp.onreadystatechange = function() {
+                                if (xmlhttp.readyState == 4) {
+                                    var local = clone(lib.globals);
+                                    local[applet.statename] = applet.instances[id];
+                                    if (xmlhttp.status == 200) {
+                                        if (trace) trace("post-response: " + format(xmlhttp.responseText));
+                                        local[resultname] = xmlhttp.responseText;
+                                        result = evalExpr(succexpr, local);
+                                        if (typeof result != 'undefined') {
+                                            if (trace) trace("post success processing");
+                                            result(applet, id);
+                                        }
+                                    } else {
+                                        if (trace) trace("post-error: " + format(xmlhttp.responseText));
+                                        local[msgname] = xmlhttp.responseText;
+                                        result = evalExpr(errexpr, local);
+                                        if (typeof result != 'undefined') {
+                                            if (trace) trace("post error processing");
+                                            result(applet, id);
+                                        }
 
-        function evalStmt(stmt, context, output) {
-            var name;
-            var i;
-            var prop;
-            var context2 = {};
-            var stmt2;
-            var result = {};
-            var temp;
+                                    }
+                                }
+                            };
+                            xmlhttp.open("POST", url, true);
+                            var FD = new FormData();
+                            for (var key in params) {
+                                FD.append(key, params[key]);
+                            }
+                            xmlhttp.send(FD);
+                        };
+                    } else {
+                        if (trace) trace("post -> failed");
+                        return undefined;
+                    }
+                },
+                setform: function(expr, context) {
+                    return undefined;
+                },
+            };
+            var alg = algs[expr.nodeName];
+            return alg(expr, context);
+        };
 
+        var evalStmt = function(stmt, context, output) {
             function list() {
                 var result = "";
                 for (var v in output) {
@@ -1305,1057 +1663,397 @@ var Fabula = (function() {
                 }
                 return result;
             }
-            try {
-                // if(trace) trace("evalStmt " + stmt.nodeName);
-
-                switch (stmt.nodeName) {
-                    case "is":
-                        if (evalExpr(firstExpr(stmt), context, result)) {
-                            // if (trace) trace("is : success");
-                        } else {
-                            // if (trace) trace("is : failed");
+            var algs = {
+                is: function(stmt, context, output) {
+                    return (typeof evalExpr(firstExpr(stmt), context)) != 'undefined';
+                },
+                def: function(stmt, context, output) {
+                    var name = stmt.getAttribute("var");
+                    var result = evalExpr(firstExpr(stmt), context);
+                    if (typeof result != 'undefined') {
+                        output[name] = result;
+                        if (trace) trace("def " + name + ": " + format(result));
+                        return true;
+                    } else {
+                        if (trace) trace("def " + name + " -> failed");
+                        return false;
+                    }
+                },
+                not: function(stmt, context, output) {
+                    var result = {};
+                    if (evalStmt(firstExpr(stmt), context, result)) {
+                        if (trace) trace("not -> failed");
+                        return false;
+                    } else {
+                        if (trace) trace("not -> success");
+                        return true;
+                    }
+                },
+                all: function(stmt, context, output) {
+                    // var prop;
+                    // var result = {};
+                    // var context2 = clone(context);
+                    var temp = getChildren(stmt);
+                    for (var i = 0; i < temp.length; i++) {
+                        if (!evalStmt(temp[i], context, output)) {
+                            // for (prop in result) {
+                            // context2[prop] = result[prop];
+                            // output[prop] = result[prop];
+                            // }
+                            // result = {};
+                            // } else {
+                            if (trace) trace("all -> failed");
                             return false;
                         }
-                        break;
-                    case "not":
-                        temp = evalStmt(firstExpr(stmt), context, result);
-                        if (temp) {
-                            // if (trace) trace("not : failed");
-                            return false;
-                        } else {
-                            // if (trace) trace("not : success");
+                    }
+                    if (trace) trace("all " + list() + "-> success");
+                    return true;
+                },
+                any: function(stmt, context, output) {
+                    var prop;
+                    var result = {};
+                    var temp = getChildren(stmt);
+                    for (var i = 0; i < temp.length; i++) {
+                        if (evalStmt(temp[i], context, output)) {
+                            // for (prop in result) {
+                            //     output[prop] = result[prop];
+                            // }
+                            if (trace) trace("any " + list() + "-> success");
                             return true;
                         }
-                        break;
-                    case "def":
-                        name = stmt.getAttribute("var");
-                        if (evalExpr(firstExpr(stmt), context, result)) {
-                            output[name] = result.result;
-                            // if (trace) trace("def " + name + " : " + format(result.result));
-                        } else {
-                            // if (trace) trace("def " + name + " : failed");
-                            return false;
+                    }
+                    if (trace) trace("any -> failed");
+                    return false;
+                },
+                unwrap: function(stmt, context, output) {
+                    var prop;
+                    var result = evalExpr(firstExpr(stmt), context);
+                    if (typeof result != 'undefined') {
+                        for (prop in result) {
+                            output[prop] = result[prop];
                         }
-                        break;
-                    case "all":
-                        for (prop in context) {
-                            context2[prop] = context[prop];
-                        }
-                        temp = getChildren(stmt);
-                        for (i = 0; i < temp.length; i++) {
-                            if (evalStmt(temp[i], context2, result)) {
-                                for (prop in result) {
-                                    context2[prop] = result[prop];
-                                    output[prop] = result[prop];
-                                }
-                                result = {};
-                            } else {
-                                output = {};
-                                // if (trace) trace("all : failed");
-                                return false;
-                            }
-                        }
-                        // if (trace) trace("all " + list() + ": success");
-                        break;
-                    case "any":
-                        temp = getChildren(stmt);
-                        for (i = 0; i < temp.length; i++) {
-                            if (evalStmt(temp[i], context, result)) {
-                                for (prop in result) {
-                                    output[prop] = result[prop];
-                                }
-                                // if (trace) trace("any " + list() + ": success");
-                                return true;
-                            }
-                        }
-                        // if (trace) trace("any : failed");
+                        if (trace) trace("unwrap " + list() + "-> success");
+                        return true;
+                    } else {
+                        if (trace) trace("unwrap -> failed");
                         return false;
-                    case "unwrap":
-                        if (evalExpr(firstExpr(stmt), context, result)) {
-                            for (prop in result.result) {
-                                output[prop] = result.result[prop];
-                            }
-                            // if (trace) trace("unwrap " + list() + ": success");
-                        } else {
-                            // if (trace) trace("unwrap : failed");
-                        }
-                        break;
-                    default:
-                        return false;
+                    }
                 }
-                return true;
-            } catch (error) {
-                return false;
-            }
-        }
+            };
+            var alg = algs[stmt.nodeName];
+            return alg(stmt, context, output);
+        };
+
         this.evalExpr = evalExpr;
         this.evalStmt = evalStmt;
-    }
+    } //Engine
 
-    /*
-     * Run-time objects
-     */
-    var InvalidStr = core.xml.parseText("<invalid><string/></invalid>");
-
-    function Applet(xml, lib, engine) {
-        var temp;
-        var children;
-        var child;
-        var prop;
-        this.local = {};
-        var i;
-        var j;
-
-        this.name = xml.getAttribute("name");
-        this.library = lib;
-        this.content = InvalidStr;
-        this.initState = null;
-        this.initActions = [];
-        this.respState = null;
-        this.respBefore = [];
-        this.respAfter = [];
-        // this.initcontentname = null;
-        // this.inittimename = null;
-        this.initrandnames = [];
-        this.resprandnames = [];
-        this.events = {};
-        this.channels = {};
-        if (xml.hasAttribute("trace") && xml.getAttribute("trace") == "on") {
-            this.trace = trace;
-        } else {
-            this.trace = null;
+    function Library(xml, parent, id, varlist, chlist, applist) { //only xml is always required; other parameters are for import 
+        var trace = null;
+        if (xml.hasAttribute("trace") && xml.getAttribute("trace") === "on") {
+            trace = function(msg) {
+                console.log(msg);
+            };
         }
-
-        this.id = "id";
-        children = getChildren(xml);
-        for (i = 0; i < children.length; i++) {
-            child = children[i];
-            switch (child.nodeName) {
-                case "model":
-                    this.statename = child.getAttribute("state");
-                    break;
-                case "view":
-                    var id = child.getAttribute("id");
-                    if (id === null) {
-                        id = "id";
-                    }
-                    this.idname = id;
-                    this.content = firstExpr(child);
-                    break;
-                case "init":
-                    this.initargname = child.getAttribute("arg");
-                    if (this.initargname === null) {
-                        this.initargname = "arg";
-                    }
-                    temp = child.getAttribute("random");
-                    if (temp !== null) {
-                        this.initrandnames = temp.split(",");
-                    }
-                    this.initcontentname = child.getAttribute("content");
-                    this.inittimename = child.getAttribute("time");
-                    temp = findChildren(child, "state");
-                    if (temp.length === 1) {
-                        this.initState = firstExpr(temp[0]);
-                    } else {
-                        this.initState = null;
-                    }
-                    temp = findChildren(child, "actions");
-                    if (temp.length === 1) {
-                        this.initActions = getChildren(temp[0]);
-                    } else {
-                        this.initActions = [];
-                    }
-                    break;
-                case "proceed":
-                    this.inputname = findChild(child, "on").getAttribute("input");
-                    temp = child.getAttribute("random");
-                    if (temp !== null) {
-                        this.resprandnames = temp.split(",");
-                    }
-                    this.resptimename = child.getAttribute("time");
-                    temp = findChildren(child, "before");
-                    if (temp.length === 1) {
-                        this.respBefore = getChildren(temp[0]);
-                    } else {
-                        this.respBefore = [];
-                    }
-                    this.respState = firstExpr(findChild(child, "state"));
-                    temp = findChildren(child, "after");
-                    if (temp.length === 1) {
-                        this.respAfter = getChildren(temp[0]);
-                    } else {
-                        this.respAfter = [];
-                    }
-                    break;
-                case "events":
-                    this.eventname = child.getAttribute("data");
-                    temp = getChildren(child);
-                    for (j = 0; j < temp.length; j++) {
-                        this.events[temp[j].nodeName] = firstExpr(temp[j]);
-                    }
-                    this.eventtimename = child.getAttribute("time");
-                    break;
-                case "receive":
-                    temp = getChildren(child);
-                    for (j = 0; j < temp.length; j++) {
-                        if (temp[j].hasAttribute("channel")) {
-                            this.channels[temp[j].getAttribute("channel")] = {
-                                data: child.getAttribute("data"),
-                                expr: firstExpr(temp[j])
-                            };
-                        }
-                    }
-                    break;
-                case "output":
-                    break;
-                default:
-                    throw "Error";
-            }
-        }
-
-        this.instances = {};
-        this.input = [];
-        this.targets = [];
-        this.extensions = [];
-        var applet = this;
-        this.next = 0;
-        this.initialized = false;
-        this.initialize = function() {
-            for (prop in extensions) {
-                var libex = extensions[prop];
-                if (libex.prefix === lib.libid && libex.appext.hasOwnProperty(applet.name)) {
-                    applet.extensions.push(libex.appext[applet.name]);
-                    libex.appext[applet.name].init(lib.channels);
-                }
-            }
-            this.initialized = true;
-        };
-        var output = {};
-        for (prop in lib.context) {
-            this.local[prop] = lib.context[prop];
-        }
-
-
-        this.handlers = {
-            click: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("click " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.click, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            focus: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("focus " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.focus, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            blur: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("blur " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                // applet.local[applet.eventname] = e.currentTarget.value;
-                if (engine.evalExpr(applet.events.blur, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    output.result(applet, id);
-                    // applet.respond(id, output.result);
-                }
-            },
-            change: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                applet.local[applet.statename] = instance;
-                applet.local[applet.eventname] = e.target.value;
-                if (applet.trace) applet.trace("change " + applet.name + "::" + id + " : " + format(e.target.value));
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.change, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            input: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                applet.local[applet.statename] = instance;
-                applet.local[applet.eventname] = e.target.value;
-                if (applet.trace) applet.trace("input " + applet.name + "::" + id + " : " + format(e.target.value));
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.input, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            // keypress: function(e) {
-            //     var id = e.currentTarget.getAttribute("id");
-            //     var instance = applet.instances[id];
-            //     e = e || window.event;
-            //     var charCode = e.keyCode || e.which;
-            //     var charStr = String.fromCharCode(charCode);
-            //     applet.local[applet.eventname] = charStr;
-            //     if (applet.trace) applet.trace("keypress " + applet.name + "::" + id + " : " + charStr);
-            //     applet.local[applet.statename] = instance;
-            //     if (applet.eventtimename !== null) {
-            //         applet.local[applet.eventtimename] = (new Date());
-            //     }
-            //     if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
-            //         e.stopPropagation();
-            //         // e.preventDefault();
-            //         // applet.respond(id, output.result);
-            //         output.result(applet, id);
-            //     }
-            // },
-            mouseover: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("mouseover " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.mouseover, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            mouseout: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("mouseout " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.mouseout, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            mousedown: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("mousedown " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.mousedown, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            },
-            mouseup: function(e) {
-                var id = e.currentTarget.getAttribute("id");
-                var instance = applet.instances[id];
-                if (applet.trace) applet.trace("mouseup " + applet.name + "::" + id);
-                applet.local[applet.statename] = instance;
-                if (applet.eventtimename !== null) {
-                    applet.local[applet.eventtimename] = (new Date());
-                }
-                if (engine.evalExpr(applet.events.mouseup, applet.local, output)) {
-                    e.stopPropagation();
-                    // e.preventDefault();
-                    // applet.respond(id, output.result);
-                    output.result(applet, id);
-                }
-            }
-        };
-
-        this.class = function() {
-            var main = lib;
-            var cl = applet.name;
-            while (main.parent) {
-                cl = main.libid + '.' + cl;
-                main = main.parent;
-            }
-            return 'applet-' + cl;
-        };
-
-        this.create = function(id, element, applets) {
-            var i;
-            var context = {};
-            var prop;
-            var child;
-            var id2;
-            var appname;
-            var app;
-            var elements;
-            var arg;
-            var newid;
-
-            if (this.instances.hasOwnProperty(id)) return;
-
-            if (!this.initialized) this.initialize();
-
-            for (prop in this.local) {
-                context[prop] = this.local[prop];
-            }
-
-            if (element) {
-                if (element.attributes["data-arg"]) {
-                    arg = element.attributes["data-arg"].value;
-                } else {
-                    arg = "";
-                }
-                context[this.initargname] = arg;
-                newid = this.class() + '-' + this.next++;
-                if (applet.trace) applet.trace("create " + applet.name + "::" + newid + " : " + arg);
-                for (i = 0; i < this.initrandnames.length; i++) {
-                    context[this.initrandnames[i]] = Math.random();
-                }
-                if (this.inittimename) {
-                    context[this.inittimename] = Number(new Date());
-                }
-                if (this.initcontentname) {
-                    context[this.initcontentname] = element.innerHTML;
-                }
-                if (!this.initState || engine.evalExpr(this.initState, context, output)) {
-                    if (this.initState) {
-                        this.instances[newid] = output.result;
-                        context[this.statename] = output.result;
-                    } else {
-                        this.instances[newid] = null;
-                    }
-                    if(applet.trace) applet.trace("init " + applet.name + "::" + newid + " : " + format(this.instances[newid]));
-                    for (var e in this.events) {
-                        element.addEventListener(e, this.handlers[e]);
-                    }
-                    context[this.idname] = newid;
-                    element.id = newid;
-                    if (engine.evalExpr(this.content, context, output)) {
-                        element.innerHTML = output.result;
-                        // element.insertAdjacentHTML("beforeend", output.result);
-                    }
-                    for (var j in applet.extensions) {
-                        try {
-                            applet.extensions[j].attach(newid, element, arg);
-                        } catch (ex) {
-                            if (trace) trace("Exception: " + ex.message);
-                        }
-                    }
-                    this.input[newid] = [];
-                    for (i = 0; i < this.initActions.length; i++) {
-                        if (engine.evalExpr(this.initActions[i], context, output)) {
-                            var action = output.result;
-                            action(this, newid);
-                        }
-                    }
-                    for (appname in applets) {
-                        app = applets[appname];
-                        elements = element.getElementsByClassName(app.class());
-                        for (i = 0; i < elements.length; i++) {
-                            child = elements[i];
-                            if(!child.id || !app.exists(child.id)) {
-                                app.create('', child, app.library.applets);
-                            }
-                            // id2 = child.getAttribute("id");
-                            // if (id2 !== null && id2 !== id) {
-                            //     if (app.exists(id2)) {
-                            //         // app.redraw(id2, applets);
-                            //     } else {
-                            //         app.create(id2, child, app.library.applets);
-                            //     }
-                            // }
-                        }
-                    }
-                    lib.resume();
-                }
-            }
-        };
-        this.exists = function(id) {
-            return this.instances.hasOwnProperty(id);
-        };
-        this.respond = function(id, msg) {
-            if (this.input.hasOwnProperty(id)) {
-                this.input[id].push(msg);
-                lib.resume();
-            }
-        };
-        this.run = function(id, applets) {
-            var i;
-            var j;
-
-            var instance = this.instances[id];
-            var action;
-            var queue = this.input[id];
-            var context = {};
-            var prop;
-            var appname;
-
-            if (!this.initialized) this.initialize();
-
-            for (prop in this.local) {
-                context[prop] = this.local[prop];
-            }
-
-            context[this.statename] = instance;
-            i = 0;
-            while (i < queue.length) {
-                context[this.inputname] = queue[i];
-                for (j = 0; j < this.resprandnames.length; j++) {
-                    context[this.resprandnames[j]] = Math.random();
-                }
-                if (this.resptimename) {
-                    context[this.resptimename] = (new Date());
-                }
-                if (applet.trace) applet.trace("proceed " + applet.name + "::" + id + " : " + format(queue[i]));
-                for (j = 0; j < this.respBefore.length; j++) {
-                    if (engine.evalExpr(this.respBefore[j], context, output)) {
-                        action = output.result;
-                        action(this, id);
-                    }
-                }
-                if (this.respState && engine.evalExpr(this.respState, context, output)) {
-                    this.instances[id] = output.result;
-                    context[this.idname] = id;
-                    context[this.statename] = output.result;
-                    if (engine.evalExpr(this.content, context, output)) {
-                        var element = document.getElementById(id);
-                        element.innerHTML = output.result;
-                        // element.insertAdjacentHTML("beforeend", output.result);
-                        for (appname in applets) {
-                            app = applets[appname];
-                            elements = element.getElementsByClassName(app.class());
-                            for (k = 0; k < elements.length; k++) {
-                                child = elements[k];
-                                id2 = child.getAttribute("id");
-                                if (id2 && app.exists(id2)) {
-                                    app.destroy(id2);
-                                }
-                                app.create(id2, child, app.library.applets);
-                            }
-                        }
-                        if (applet.library.parent) {
-                            for (appname in applet.library.parent.applets) {
-                                app = applet.library.parent.applets[appname];
-                                elements = element.getElementsByClassName(app.class());
-                                for (k = 0; k < elements.length; k++) {
-                                    child = elements[k];
-                                    id2 = child.getAttribute("id");
-                                    if (id2 !== null && id2 !== id) {
-                                        if (app.exists(id2)) {
-                                            app.destroy(id2);
-                                        }
-                                        app.create(id2, child, app.library.applets);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    for (j = 0; j < this.respAfter.length; j++) {
-                        if (engine.evalExpr(this.respAfter[j], context, output)) {
-                            action = output.result;
-                            action(this, id);
-                        }
-                    }
-                }
-                for (j in applet.extensions) {
-                    try {
-                        applet.extensions[j].react(id, queue[i]);
-                    } catch (ex) {}
-                }
-                i++;
-            }
-            this.input[id] = [];
-        };
-        this.destroy = function(id) {
-            if (applet.trace) applet.trace("destroy " + applet.name + "::" + id);
-            delete this.instances[id];
-            delete this.input[id];
-        };
-    }
-
-    function Channel(xml, engine) {
-        this.name = xml.getAttribute("name");
-        this.targets = [];
-        this.send = function(data) {
-            var prop;
-            var output = {};
-            if (trace) trace("send " + this.name + " : " + format(data));
-            for (var i = 0; i < this.targets.length; i++) {
-                var target = this.targets[i];
-                var local = {};
-                for (prop in target.applet.local) {
-                    local[prop] = target.applet.local[prop];
-                }
-                if (trace) trace("receive " + target.applet.name);
-                local[target.data] = data;
-                for (var id2 in target.applet.instances) {
-                    var state = target.applet.instances[id2];
-                    local[target.applet.statename] = state;
-                    if (engine.evalExpr(target.expr, local, output)) {
-                        if (trace) trace("accept " + target.applet.name + "::" + id2 + " : " + format(data));
-                        target.applet.respond(id2, output.result);
-                    }
-                }
-            }
-        };
-    }
-
-    var libbyurl = {};
-
-    function loadLib(url, receive, parent, id, varlist, chlist, applist) {
-        if (libbyurl.hasOwnProperty(url)) {
-            if (receive) receive(libbyurl[url], parent, id, varlist, chlist, applist);
-        } else {
-            pending++;
-            asyncRequest('GET', url,
-                function(xml) {
-                    var lib = new Library(xml.childNodes[0], parent, id);
-                    if (trace) trace("library " + url + " loaded");
-                    pending--;
-                    libbyurl[url] = lib;
-                    if (receive) receive(lib, parent, id, varlist, chlist, applist);
-                    if (!parent) {
-                        mainlib = lib;
-                    }
-                    if (pending === 0) {
-                        mainlib.resume();
-                    }
-                });
-        }
-    }
-
-    function Library(xml, parent, libid) {
-        this.applets = {};
-        this.channels = {};
-        var temp;
-        var name;
-        var output = {};
-        var prop;
-        var common;
-        this.context = {
-            core: core
-        };
+        var prop, temp, name, i;
+        this.id = id; //this library's id in the parent library
+        this.trace = trace;
         this.parent = parent;
-        this.libid = libid;
         this.active = false;
+        this.pending = 0;
+        this.channels = {};
+        this.applets = {};
+        this.globals = {
+            core: clone(core) //more globals will be added at init
+        };
+        this.idlelist = [];
+        this.extensions = {};
+        var extname = xml.getAttribute("extension");
+        if (extname) {
+            var extension = extensions[extname];
+            extension(extender(this));
+        }
+        this.varlist = varlist;
+        this.chlist = chlist;
+        this.applist = applist;
 
         var lib = this;
-        lib.initialized = false;
-
-        this.actions = {
-            each: function(list) {
-                return function(applet, id) {
-                    if (trace) trace("each " + applet.name + "::" + id);
-                    var local = {};
-                    for (prop in applet.local) {
-                        local[prop] = applet.local[prop];
-                    }
-                    local[applet.idname] = id;
-                    local[applet.statename] = applet.instances[id];
-                    for (var i = 0; i < list.length; i++) {
-                        list[i](applet, id);
-                    }
-                };
-            },
-            send: function(name, msg) {
-                return function(applet, id) {
-                    if (trace) trace("send " + applet.name + "::" + id + " to: " + name + " data: " + format(msg));
-                    var channel = applet.library.channels[name];
-                    channel.send(msg);
-                };
-            },
-            setattr: function(name, value) {
-                return function(applet, id) {
-                    if (trace) trace("setattr " + applet.name + "::" + id + " name: " + name + " value: " + format(value));
-                    var element = document.getElementById(id);
-                    element[name] = value;
-                };
-            },
-            take: function(msg) {
-                return function(applet, id) {
-                    if (trace) trace("take " + applet.name + "::" + id);
-                    applet.respond(id, msg);
-                };
-            },
-            delay: function(action, interval, context) {
-                return function(applet, id) {
-                    setTimeout(function() {
-                        action(applet, id);
-                    }, interval);
-                };
-            },
-            get: function(url, resultname, success, msgname, handler, context) {
-                var local = {};
-                for (prop in context) {
-                    local[prop] = context[prop];
-                }
-                return function(applet, id) {
-                    if (trace) trace("get " + applet.name + "::" + id + " : " + url);
-                    var xmlhttp = new XMLHttpRequest();
-                    xmlhttp.onreadystatechange = function() {
-                        if (xmlhttp.readyState == 4) {
-                            local[applet.idname] = id;
-                            local[applet.statename] = applet.instances[id];
-                            if (xmlhttp.status == 200) {
-                                if (trace) trace("get-response: " + format(xmlhttp.responseText));
-                                local[resultname] = xmlhttp.responseText;
-                                if (engine.evalExpr(success, local, output)) {
-                                    output.result(applet, id);
-                                }
-                            } else {
-                                if (trace) trace("get-error: " + format(xmlhttp.responseText));
-                                local[msgname] = xmlhttp.responseText;
-                                if (engine.evalExpr(handler, local, output)) {
-                                    output.result(applet, id);
-                                }
-
-                            }
-                        }
-                    };
-                    xmlhttp.open("GET", url, true);
-                    xmlhttp.send();
-                };
-            },
-            post: function(url, params, resultname, success, msgname, handler, context) {
-                var local = {};
-                for (prop in context) {
-                    local[prop] = context[prop];
-                }
-                return function(applet, id) {
-                    if (trace) trace("post " + applet.name + "::" + id + " : " + url);
-                    var xmlhttp = new XMLHttpRequest();
-                    xmlhttp.onreadystatechange = function() {
-                        if (xmlhttp.readyState == 4) {
-                            local[applet.idname] = id;
-                            local[applet.statename] = applet.instances[id];
-                            if (xmlhttp.status == 200) {
-                                if (trace) trace("post-response: " + format(xmlhttp.responseText));
-                                local[resultname] = xmlhttp.responseText;
-                                if (engine.evalExpr(success, local, output)) {
-                                    output.result(applet, id);
-                                }
-                            } else {
-                                if (trace) trace("post-error: " + format(xmlhttp.responseText));
-                                local[msgname] = xmlhttp.responseText;
-                                if (engine.evalExpr(handler, local, output)) {
-                                    output.result(applet, id);
-                                }
-
-                            }
-                        }
-                    };
-                    xmlhttp.open("POST", url, true);
-                    var FD = new FormData();
-                    for (var key in params) {
-                        FD.append(key, params[key]);
-                    }
-                    xmlhttp.send(FD);
-                };
-            },
-            setform: function(url, formname, submit, resultname, success, msgname, handler, context) {
-                var local = {};
-                for (prop in context) {
-                    local[prop] = context[prop];
-                }
-                return function(applet, id) {
-                    if (trace) trace("setform " + applet.name + "::" + id + " url: " + url + " form: " + formname);
-                    var form = document.forms.namedItem(formname);
-                    if (form) {
-                        form.addEventListener('submit', function(ev) {
-                            if (trace) trace("post " + formname);
-                            var xmlhttp = new XMLHttpRequest();
-                            xmlhttp.onreadystatechange = function() {
-                                if (xmlhttp.readyState == 4) {
-                                    local[applet.idname] = id;
-                                    local[applet.statename] = applet.instances[id];
-                                    if (xmlhttp.status == 200) {
-                                        if (trace) trace("post-response: " + xmlhttp.responseText);
-                                        local[resultname] = xmlhttp.responseText;
-                                        if (engine.evalExpr(success, local, output)) {
-                                            output.result(applet, id);
-                                        }
-                                    } else {
-                                        if (trace) trace("post-error: " + xmlhttp.responseText);
-                                        local[msgname] = xmlhttp.responseText;
-                                        if (engine.evalExpr(handler, local, output)) {
-                                            output.result(applet, id);
-                                        }
-
-                                    }
-                                }
-                            };
-                            setTimeout(function() {
-                                xmlhttp.open("POST", url, true);
-                                var FD = new FormData(form);
-                                xmlhttp.send(FD);
-                                submit(applet, id);
-                            });
-                            ev.preventDefault();
-                        });
-                    } else {
-                        if (trace) trace("form " + formname + " not found");
-                    }
-                    return false;
-                };
-            },
-        };
-
-        lib.context.core.appletclass = function(name) {
-            if (lib.applets.hasOwnProperty(name)) {
+        this.globals.core.appletclass = function(name) {
+            if (name in lib.applets) {
                 return lib.applets[name].class();
             } else {
                 return '';
             }
         };
-        var engine = new ExprEngine(this.actions);
-        var i;
-        var j;
-        var doimport;
-        var vars;
-        var applets;
-        var channels;
-        var attr;
-        var p;
-        var oldname;
-        var newname;
-        var skip;
-        var channel;
-
+        this.common = [];
+        //read globals
         temp = findChildren(xml, "common");
         if (temp.length > 0) {
             temp = getChildren(temp[0]);
             for (i = 0; i < temp.length; i++) {
-                if (!engine.evalStmt(temp[i], lib.context, output)) {
-                    throw "Common section failed";
-                }
-                for (prop in output) {
-                    this.context[prop] = output[prop];
-                }
+                this.common.push(temp[i]);
             }
         }
-
+        //readd channels
         temp = findChildren(xml, "channel");
         for (i = 0; i < temp.length; i++) {
             name = temp[i].getAttribute("name");
-            channel = new Channel(temp[i], engine);
-            this.channels[name] = channel;
+            this.channels[name] = new Channel(temp[i], this);
         }
-
+        //read applets
         temp = findChildren(xml, "applet");
         for (i = 0; i < temp.length; i++) {
             name = temp[i].getAttribute("name");
-            applet = new Applet(temp[i], lib, engine);
-            this.applets[name] = applet;
+            this.applets[name] = new Applet(temp[i], this);
         }
+        //start importing 
+        temp = findChildren(xml, "import");
+        for (i = 0; i < temp.length; i++) {
+            var vtemp = [];
+            var ctemp = [];
+            var atemp = [];
+            var liburl = temp[i].getAttribute("library");
+            var libid = temp[i].getAttribute("id");
+            var attr;
+            // import variable
+            var vars = findChildren(temp[i], "data");
+            for (var j = 0; j < vars.length; j++) {
+                attr = vars[j].getAttribute("name");
+                vtemp.push(attr);
+            }
+            // // import channel
+            var channels = findChildren(temp[i], "channel");
+            for (j = 0; j < channels.length; j++) {
+                attr = channels[j].getAttribute("name");
+                ctemp.push(attr);
+            }
+            // // import applet
+            var applets = findChildren(temp[i], "applet");
+            for (j = 0; j < applets.length; j++) {
+                attr = applets[j].getAttribute("name");
+                atemp.push(attr);
+            }
+            this.pending++;
+            loadLib(liburl, this, libid, vtemp, ctemp, atemp); //request child library import
+        }
+        if (this.pending === 0) { //if no imports, initialize right now
+            this.init();
+        }
+    } //Library
 
-        for (name in lib.applets) {
-            for (prop in lib.applets[name].channels) {
-                var ch = lib.applets[name].channels[prop];
-                if (lib.channels.hasOwnProperty(prop)) {
-                    var target = {applet: lib.applets[name], data: ch.data, expr: ch.expr};
-                    channel = lib.channels[prop];
-                    if (trace) trace("applet " + name + " listens channel " + channel.name);
+    Library.prototype.path = function() {
+        if (this.id) {
+            var path = this.id;
+            var lib = this.parent;
+            while (lib.id) {
+                path = lib.id + '::' + path;
+                lib = lib.parent;
+            }
+            return path;
+        } else {
+            return '<main>';
+        }
+    };
+
+    Library.prototype.init = function() {
+        var channel, temp, i, name, applet;
+        var trace = this.trace;
+        var eng = new Engine(this, trace);
+
+        if (trace) trace("initializing library " + this.path());
+        //initialize data
+        for (i = 0; i < this.common.length; i++) {
+            if (!eng.evalStmt(this.common[i], this.globals, this.globals)) {
+                throw "Common section failed";
+            }
+        }
+        delete this.common;
+        //find targets for each channel
+        for (name in this.applets) {
+            applet = this.applets[name];
+            for (var prop in applet.channels) {
+                var ch = applet.channels[prop];
+                if (prop in this.channels) {
+                    var target = {
+                        applet: applet,
+                        data: ch.data,
+                        expr: ch.expr
+                    };
+                    channel = this.channels[prop];
+                    if (trace) trace("applet " + name + " listens channel " + prop);
                     channel.targets.push(target);
                 }
             }
         }
-
-        doimport = function(childlib, parent, id, varlist, chlist, applist) {
-            var target;
-            var channel;
-            var i;
-            if (trace) trace("importing library " + id);
-            for (i in varlist) {
-                prop = varlist[i];
-                if (trace) trace("import var " + id + '::' + prop);
-                parent.context[id + '::' + prop] = childlib.context[prop];
-            }
-            for (name in parent.applets) {
-                var app = parent.applets[name];
-                for (prop in childlib.channels) {
-                    if (app.channels.hasOwnProperty(id + '::' + prop)) { //parent's applet listens to child's channel?
-                        target = {applet: app, data: app.channels[id + '::' + prop].data, expr: app.channels[id + '::' + prop].expr};
-                        channel = childlib.channels[prop];
-                        if (trace) trace("applet " + name + " listens channel " + id + '::' + channel.name);
-                        channel.targets.push(target);
-                    }
-                }
-            }
-            for (i in chlist) {
-                prop = chlist[i];
-                if (trace) trace("import channel " + id + '::' + prop);
-                parent.channels[id + '::' + prop] = childlib.channels[prop];
-            }
-            for (i in applist) {
-                prop = applist[i];
-                if (trace) trace("import applet " + id + '::' + prop);
-                parent.applets[id + '::' + prop] = childlib.applets[prop];
+        //initialize applet extensions
+        for (name in this.extensions) {
+            var extension = this.extensions[name];
+            try {
+                extension.init(this.channels);
+                if (trace) trace("applet extension " + name + " initialized");
+            } catch (ex) {
+                if (trace) trace("Exception: " + ex.message);
             }
 
-        };
-
-        temp = findChildren(xml, "import");
-        skip = false;
-        for (i = 0; i < temp.length; i++) {
-            var varlist = [];
-            var chlist = [];
-            var applist = [];
-            var liburl = temp[i].getAttribute("library");
-            var id = temp[i].getAttribute("id");
-            // import variable
-            vars = findChildren(temp[i], "var");
-            for (j = 0; j < vars.length; j++) {
-                attr = vars[j].getAttribute("name");
-                varlist.push(attr);
-            }
-            // // import channel
-            channels = findChildren(temp[i], "channel");
-            for (j = 0; j < channels.length; j++) {
-                attr = channels[j].getAttribute("name");
-                chlist.push(attr);
-            }
-            // // import applet
-            applets = findChildren(temp[i], "applet");
-            for (j = 0; j < applets.length; j++) {
-                attr = applets[j].getAttribute("name");
-                applist.push(attr);
-            }
-            loadLib(liburl, doimport, lib, id, varlist, chlist, applist);
         }
 
-        lib.resume = function() {
-            if (!lib.active) {
-                lib.active = true;
-                setTimeout(lib.run, 0);
-            }
-        };
+        if (this.parent) { //now we can pass this library's exports to parent library, if any
+            this.parent.doimport(this, this.id, this.varlist, this.chlist, this.applist);
+            delete this.varlist;
+            delete this.chlist;
+            delete this.applist;
+        } else {
+            this.resume(); //the main library initialized - start it
+        }
+    };
 
-        lib.run = function() {
-            var name;
-            var applet;
-            var elements;
-            var element;
-            var id;
-            var ids;
-            var i;
-            lib.active = false;
-            trace('RUN ' + lib.libid);
-            for (name in lib.applets) {
-                applet = lib.applets[name];
-                for (id in applet.instances) {
-                    element = document.getElementById(id);
-                    if (element === null) {
-                        applet.destroy(id, trace);
-                    } else {
-                        applet.run(id, applet.library.applets);
-                        // if(lib != applet.library)
-                        //     applet.library.resume();
+    Library.prototype.doimport = function(childlib, id, vars, chs, apps) {
+        //a child library was initialized - import definitions
+        var trace = this.trace;
+        if (trace) trace("importing " + childlib.path() + " into " + this.path());
+        var prop, i;
+        for (i = 0; i < vars.length; i++) {
+            prop = vars[i];
+            if (prop in childlib.globals) {
+                this.globals[id + '::' + prop] = childlib.globals[prop];
+            } else {
+                console.log("variable " + prop + " not found in library " + id);
+            }
+        }
+        for (i = 0; i < chs.length; i++) {
+            prop = chs[i];
+            if (prop in childlib.channels) {
+                this.channels[id + '::' + prop] = childlib.channels[prop];
+            } else {
+                console.log("channel " + prop + " not found in library " + id);
+            }
+        }
+        for (i = 0; i < apps.length; i++) {
+            prop = apps[i];
+            if (prop in childlib.applets) {
+                this.applets[id + '::' + prop] = childlib.applets[prop];
+            } else {
+                console.log("applet " + prop + " not found in library " + id);
+            }
+        }
+        //if all children initialized, initialize itself
+        if (--this.pending === 0) {
+            this.init();
+        }
+    };
+
+    Library.prototype.resume = function() {
+        if (!this.active) {
+            this.active = true;
+            var lib = this;
+            var trace = this.trace;
+            setTimeout(function() {
+                var name;
+                var applet;
+                var elements;
+                var element;
+                var id;
+                var ids;
+                var i;
+                lib.active = false;
+                // trace('RUN ' + this.path());
+                for (name in lib.applets) {
+                    applet = lib.applets[name];
+                    for (id in applet.instances) {
+                        element = document.getElementById(id);
+                        if (!element) {
+                            applet.destroy(id);
+                        } else {
+                            applet.run(id);
+                        }
                     }
                 }
-            }
-            ids = [];
-            for (name in lib.applets) {
-                applet = lib.applets[name];
-                elements = document.getElementsByClassName(applet.class());
-                for (i = 0; i < elements.length; i++) {
-                    element = elements[i];
-                    id = element.getAttribute("id");
-                    if (!id || !applet.exists(id)) {
-                        // if (!applet.exists(id)) {
+                ids = [];
+                for (name in lib.applets) {
+                    applet = lib.applets[name];
+                    elements = document.getElementsByClassName(applet.class());
+                    for (i = 0; i < elements.length; i++) {
+                        element = elements[i];
+                        id = element.getAttribute("id");
+                        if (!id || !applet.exists(id)) {
+                            // if (!applet.exists(id)) {
                             // applet.create(id, element, lib.applets);
                             ids.push({
-                                id: id,
                                 applet: applet,
                                 element: element
                             });
-                        // }
+                            // }
+                        }
                     }
                 }
-            }
-            for (i in ids) {
-                ids[i].applet.create(ids[i].id, ids[i].element, ids[i].applet.library.applets);
-                // if(lib != ids[i].applet.library)
-                //     ids[i].applet.library.resume();
-            }
-            if (lib.parent) lib.parent.resume();
-            if (!this.active) {
-                // if (trace) trace("IDLE at " + (new Date()).toTimeString().slice(0, 8));
-                for (var ext in extensions) {
-                    for (i in extensions[ext].idlelist) {
-                        extensions[ext].idlelist[i]();
+                for (i in ids) {
+                    ids[i].applet.create(ids[i].element, ids[i].applet.lib.applets);
+                }
+                if (lib.parent) lib.parent.resume();
+                if (!lib.active) { //nothing more to do - run idle functions
+                    if (trace && !lib.parent) trace("idle");
+                    for (i = 0; i < lib.idlelist.length; i++) {
+                        try {
+                            lib.idlelist[i]();
+                        } catch (e) {}
                     }
                 }
-            }
-        };
+            });
+        }
+    };
 
+    var libcache = {};
+    var pending = 0; //number of asynchronous loadLibs
+
+    function loadLib(url, parent, id, varlist, chlist, applist) {
+        var lib;
+        var prop;
+        if (url in libcache) { //optimisation: avoid reading library with same URL again
+            lib = new Library(libcache[url].childNodes[0], parent, id, varlist, chlist, applist);
+        } else {
+            pending++;
+            asyncRequest('GET', url,
+                function(xml) {
+                    lib = new Library(xml.childNodes[0], parent, id, varlist, chlist, applist);
+                    console.log("library " + url + " loaded");
+                    pending--;
+                    libcache[url] = xml;
+                });
+        }
     }
 
-    var idle = [];
     var extensions = {};
-    // var initialized = false;
-    var liburl;
-    var mainlib;
 
-    function LibExtension() {
-        this.prefix = null;
-        this.appext = {};
-        this.idlelist = [];
-        this.add = function(name, plugin) {
-            this.appext[name] = plugin;
+    var extender = function(lib) {
+        return {
+            id: function() {
+                return lib.id;
+            },
+            idle: function(plugin) {
+                lib.idlelist.push(plugin);
+            },
+            add: function(name, plugin) {
+                if (name in lib.extensions) {
+                    console.log('applet extension ' + name + ' already exists in library ' + lib.path());
+                } else {
+                    lib.extensions[name] = plugin;
+                }
+            }
         };
-        this.idle = function(plugin) {
-            this.idlelist.push(plugin);
-        };
-    }
+    };
 
     return {
-        version: "0.25",
-        seturl: function(url) {
-            liburl = url;
-        },
-        start: function() {
+        version: "0.28",
+        start: function(url) {
             console.log("Fabula Interpreter v" + this.version);
-            loadLib(liburl, null, null, null);
+            loadLib(url);
         },
-        defineext: function(name, plugin) {
-            var ext = new LibExtension();
-            plugin(ext);
-            extensions[name] = ext;
-            // if (extensions.hasOwnProperty(name)) {
-            //     extensions[name].push(plugin);
-            // } else {
-            //     extensions[name] = [plugin];
-            // }
-        },
-        setid: function(name, prefix) {
-            extensions[name].prefix = prefix;
+        defineext: function(name, extension) {
+            if (name in extensions) {
+                console.log('library extension ' + name + ' already exists');
+            } else {
+                extensions[name] = extension;
+            }
         }
     };
 })();
