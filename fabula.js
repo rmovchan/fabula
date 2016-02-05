@@ -1131,10 +1131,10 @@ var Fabula = (function() {
                 calc: function(expr, context) {
                     var prop, stmt, result = {};
                     var where = getChildren(expr);
-                    // var context2 = clone(context);
+                    var context2 = clone(context);
                     for (var i = where.length - 1; i > 0; i--) {
                         stmt = firstExpr(where[i]);
-                        if (!evalStmt(stmt, context, context)) {
+                        if (!evalStmt(stmt, context2, context2)) {
                             //     for (prop in result) {
                             //         context2[prop] = result[prop];
                             //     }
@@ -1143,7 +1143,7 @@ var Fabula = (function() {
                             return undefined;
                         }
                     }
-                    return evalExpr(where[0], context);
+                    return evalExpr(where[0], context2);
                 },
                 text: function(expr, context) {
                     var children = getChildren(expr);
@@ -1224,7 +1224,7 @@ var Fabula = (function() {
                             if (typeof result != 'undefined') {
                                 array.push(result);
                             } else {
-                                trace("array -> failed");
+                                if(trace) trace("array -> failed");
                                 return undefined;
                             }
                         }
