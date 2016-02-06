@@ -653,7 +653,7 @@ var Fabula = (function() {
         };
     };
 
-    Applet.prototype.class = function() {
+    Applet.prototype.class = function() { //class of elements associated with applet
         var main = this.lib;
         var cl = this.name;
         while (main.parent) {
@@ -663,7 +663,7 @@ var Fabula = (function() {
         return 'applet-' + cl;
     };
 
-    Applet.prototype.create = function(element) {
+    Applet.prototype.create = function(element) { //create an instance attached to element
         var context = clone(this.lib.globals);
         var arg, i, newid, result, app;
         var trace = this.trace;
@@ -739,7 +739,7 @@ var Fabula = (function() {
         }
     };
 
-    Applet.prototype.run = function(id) {
+    Applet.prototype.run = function(id) { //process all messages in the queue
         var i, j, k;
         var instance = this.instances[id];
         var action;
@@ -830,18 +830,18 @@ var Fabula = (function() {
         this.input[id] = [];
     };
 
-    Applet.prototype.exists = function(id) {
+    Applet.prototype.exists = function(id) { //does an instance exist for given element id?
         return id in this.instances;
     };
 
-    Applet.prototype.respond = function(id, msg) {
+    Applet.prototype.respond = function(id, msg) { //place message in the queue
         if (id in this.input) {
             this.input[id].push(msg);
             this.lib.resume();
         }
     };
 
-    Applet.prototype.destroy = function(id) {
+    Applet.prototype.destroy = function(id) { //destroy instance
         if (this.trace) this.trace("destroy " + this.name + "::" + id);
         delete this.instances[id];
         delete this.input[id];
@@ -860,7 +860,7 @@ var Fabula = (function() {
         this.engine = new Engine(lib, trace);
     }
 
-    Channel.prototype.send = function(data) {
+    Channel.prototype.send = function(data) { //send data to all targets of the channel
         var output = {};
         if (this.trace) this.trace("send " + this.name + " : " + format(data));
         for (var i = 0; i < this.targets.length; i++) {
@@ -887,7 +887,7 @@ var Fabula = (function() {
 
         function evalFormula(formula, context) {
 
-            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|((?:\w+::)?\w+)|(\".*?\")|('.*?')|(`..`)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(<=?)|(\/?=)|(>=?)/g;
+            var scanner = /\s*(-?\d*\.\d+)|(-?\d+)|((?:\w+::)?\w+)|(\".*?\")|('.*?')|(=)|(#)|(@)|(\+)|(-)|(\*)|(\/)|(\.)|(\()|(\))|(\[)|(\])|(\{)|(\})|(:)|(,)|(\?)/g;
             var match;
             var token;
             var result;
@@ -902,6 +902,45 @@ var Fabula = (function() {
                 }
             }
 
+            function parseConditional() {
+                var res;
+                var v;
+                var prop;
+                var cond, t, e;
+                if (token !== null) {
+                    try {
+                        cond = parseRelation();
+                    } catch (ex) {
+                        cond = undefined;
+                    }
+                    if (token === "?") {
+                        next();
+                        t = parseSubject();
+                        if (token === ":") {
+                            next();
+                            e = parseSubject();
+                        } else {
+                            e = undefined;
+                        }
+                        if (typeof cond != 'undefined') {
+                            if (typeof cond == 'boolean') {
+                                if (cond) {
+                                    return t;
+                                } else {
+                                    return e;
+                                }
+                            } else {
+                                return t;
+                            }
+                        } else {
+                            return e;
+                        }
+                    } else {
+                        return cond;
+                    }
+                }
+            }
+
             function parseRelation() {
                 var rel;
                 var subj1 = parseSubject();
@@ -910,6 +949,7 @@ var Fabula = (function() {
                     if (rel === match[5] || rel === "=") {
                         next();
                         var subj2 = parseSubject();
+                        // next();
                         switch (rel) {
                             case "'le'":
                                 return subj1 <= subj2;
@@ -1079,8 +1119,8 @@ var Fabula = (function() {
 
 
             try {
-                next();
-                result = parseRelation();
+                next(); //read first token
+                result = parseConditional();
                 if (typeof result === 'boolean') { //Fabula has no booleans
                     if (result) {
                         if (trace) trace(formula + " -> success");
@@ -1955,12 +1995,12 @@ var Fabula = (function() {
                     ids[i].applet.create(ids[i].element, ids[i].applet.lib.applets);
                 }
                 // if (lib.parent) lib.parent.resume();
-                for (i = 0; i < lib.idlelist.length; i++) {
-                    try {
-                        lib.idlelist[i]();
-                    } catch (e) {}
-                }
                 if (!lib.active) { //nothing more to do - run idle functions
+                    for (i = 0; i < lib.idlelist.length; i++) {
+                        try {
+                            lib.idlelist[i]();
+                        } catch (e) {}
+                    }
                     if (trace && !lib.parent) trace("idle");
                 }
             });
@@ -2008,7 +2048,7 @@ var Fabula = (function() {
     };
 
     return {
-        version: "0.28",
+        version: "0.29",
         start: function(url) {
             console.log("Fabula Interpreter v" + this.version);
             loadLib(url);
