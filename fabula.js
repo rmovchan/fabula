@@ -69,44 +69,47 @@ var Fabula = (function() {
         return result;
     }
 
-    var flevel = 0;
+    var format = (function() {
+        var flevel = 0;
 
-    function format(value) {
-        var prop;
-        var result;
+        return function(value) {
+            var prop;
+            var result;
 
-        if (typeof value === "object") {
-            result = "";
-            if (flevel > 4) {
-                return "{ ... }";
-            }
-            flevel++;
-            for (prop in value) {
-                if (result.length > 1000) {
-                    result += ", ... ";
-                    break;
+            if (typeof value === "object") {
+                result = "";
+                if (flevel > 4) {
+                    flevel = 0;
+                    return "{ ... }";
                 }
-                if (result !== "") {
-                    result += ", ";
+                flevel++;
+                for (prop in value) {
+                    if (result.length > 1000) {
+                        result += ", ... ";
+                        break;
+                    }
+                    if (result !== "") {
+                        result += ", ";
+                    }
+                    result += prop + ": " + format(value[prop]);
                 }
-                result += prop + ": " + format(value[prop]);
-            }
-            flevel--;
-            if (result === "") {
-                return "";
+                flevel--;
+                if (result === "") {
+                    return "";
+                } else {
+                    return "{" + result + "}";
+                }
+            } else if (typeof value === "string") {
+                if (value.length > 300) {
+                    return '"' + value.substr(0, 300) + ' ... "';
+                } else {
+                    return '"' + value + '"';
+                }
             } else {
-                return "{" + result + "}";
+                return value;
             }
-        } else if (typeof value === "string") {
-            if (value.length > 300) {
-                return '"' + value.substr(0, 300) + ' ... "';
-            } else {
-                return '"' + value + '"';
-            }
-        } else {
-            return value;
-        }
-    }
+        };
+    })();
 
     var parseQueryString = function(queryString) {
         var params = {},
@@ -124,267 +127,271 @@ var Fabula = (function() {
         return params;
     };
 
-    var core = {
-        appletclass: function(name) {
-            return "applet-" + name;
+    function Core(lib) {
+        this.appletclass = function(name) {
+            if (name in lib.applets) {
+                return lib.applets[name].class();
+            } else {
+                return '';
+            }
+        };
+    }
+    Core.prototype.location = {
+        url: window.location.href,
+        params: parseQueryString(window.location.search.substring(1))
+    };
+    Core.prototype.math = {
+        sin: function(x) {
+            return Math.sin(x);
         },
-        location: {
-            url: window.location.href,
-            params: parseQueryString(window.location.search.substring(1))
+        cos: function(x) {
+            return Math.cos(x);
         },
-        math: {
-            sin: function(x) {
-                return Math.sin(x);
-            },
-            cos: function(x) {
-                return Math.cos(x);
-            },
-            exp: function(x) {
-                return Math.exp(x);
-            },
-            log: function(x) {
-                return Math.log(x);
-            },
-            floor: function(x) {
-                return Math.floor(x);
-            },
-            ceil: function(x) {
-                return Math.ceil(x);
-            },
-            isNaN: function(x) {
-                return isNaN(x);
-            },
-            isFinite: function(x) {
-                return isFinite(x);
+        exp: function(x) {
+            return Math.exp(x);
+        },
+        log: function(x) {
+            return Math.log(x);
+        },
+        floor: function(x) {
+            return Math.floor(x);
+        },
+        ceil: function(x) {
+            return Math.ceil(x);
+        },
+        isNaN: function(x) {
+            return isNaN(x);
+        },
+        isFinite: function(x) {
+            return isFinite(x);
+        }
+    };
+    Core.prototype.time = {
+        msec: 1.0,
+        sec: 1000.0,
+        min: 60000.0,
+        hour: 3600000.0,
+        date: function(d) {
+            return Number(new Date(d.year, d.month, d.day, 0, 0, 0, 0));
+        },
+        dateOf: function(t) {
+            var tmp = new Date(t);
+            return Number(new Date(tmp.getUTCFullYear(), tmp.getUTCMonth(), tmp.getUTCDate(), 0, 0, 0, 0));
+        },
+        encode: function(arg) {
+            return Number(new Date(arg.year, arg.month, arg.day, arg.hours, arg.min, arg.sec, arg.msec));
+        },
+        decode: function(t) {
+            var tmp = new Date(t);
+            return {
+                year: tmp.getUTCFullYear(),
+                month: tmp.getUTCMonth(),
+                day: tmp.getUTCDate(),
+                hours: tmp.getUTCHours(),
+                min: tmp.getUTCMinutes(),
+                sec: tmp.getUTCSeconds(),
+                msec: tmp.getUTCMilliseconds()
+            };
+        }
+    };
+    Core.prototype.format = {
+        intToStr: function(i) {
+            return i.toString();
+        },
+        numToStr: function(x) {
+            return x.toString();
+        },
+        formatNum: function(arg) {
+            var frm = arg.format;
+            if (frm.hasOwnProperty("prec")) {
+                return arg.num.toPrecision(frm.prec);
+            } else if (frm.hasOwnProperty("exp")) {
+                return arg.num.toExponential(frm.exp);
+            } else {
+                return arg.num.toFixed(frm.dec);
             }
         },
-        time: {
-            msec: 1.0,
-            sec: 1000.0,
-            min: 60000.0,
-            hour: 3600000.0,
-            date: function(d) {
-                return Number(new Date(d.year, d.month, d.day, 0, 0, 0, 0));
-            },
-            dateOf: function(t) {
-                var tmp = new Date(t);
-                return Number(new Date(tmp.getUTCFullYear(), tmp.getUTCMonth(), tmp.getUTCDate(), 0, 0, 0, 0));
-            },
-            encode: function(arg) {
-                return Number(new Date(arg.year, arg.month, arg.day, arg.hours, arg.min, arg.sec, arg.msec));
-            },
-            decode: function(t) {
-                var tmp = new Date(t);
-                return {
-                    year: tmp.getUTCFullYear(),
-                    month: tmp.getUTCMonth(),
-                    day: tmp.getUTCDate(),
-                    hours: tmp.getUTCHours(),
-                    min: tmp.getUTCMinutes(),
-                    sec: tmp.getUTCSeconds(),
-                    msec: tmp.getUTCMilliseconds()
-                };
+        strToNum: function(s) {
+            var result = parseFloat(s);
+            if (isNaN(result)) {
+                throw "Error";
+            }
+            return result;
+        },
+        strToInt: function(s) {
+            var result = parseInt(s);
+            if (isNaN(result)) {
+                throw "Error";
+            }
+            return result;
+        },
+        dateToStr: function(x) {
+            return (new Date(x)).toLocaleDateString();
+        },
+        timeToStr: function(x) {
+            return (new Date(x)).toLocaleTimeString();
+        },
+        dateTimeToStr: function(x) {
+            return (new Date(x)).toLocaleString();
+        },
+        strToTime: function(x) {
+            return Date.parse(x);
+        },
+    };
+    Core.prototype.string = {
+        nbsp: "&nbsp;",
+        larr: "&larr;",
+        rarr: "&rarr;",
+        uarr: "&uarr;",
+        darr: "&darr;",
+        harr: "&harr;",
+        times: "&times;",
+        laquo: "&laquo;",
+        raquo: "&raquo;",
+        lt: "&lt;",
+        gt: "&gt;",
+        copy: "&copy;",
+        amp: "&",
+        br: "<br/>",
+        symbol: function(dec) {
+            return "&#" + dec + ";";
+        },
+        substr: function(args) {
+            var from = args.from;
+            var to = args.to;
+            if (to.hasOwnProperty("length")) {
+                return args.str.substr(from, to.length);
+            } else {
+                if (to.hasOwnProperty("pos")) {
+                    return args.str.slice(from, to.pos);
+                } else {
+                    return args.str.slice(from);
+                }
             }
         },
-        format: {
-            intToStr: function(i) {
-                return i.toString();
-            },
-            numToStr: function(x) {
-                return x.toString();
-            },
-            formatNum: function(arg) {
-                var frm = arg.format;
-                if (frm.hasOwnProperty("prec")) {
-                    return arg.num.toPrecision(frm.prec);
-                } else if (frm.hasOwnProperty("exp")) {
-                    return arg.num.toExponential(frm.exp);
-                } else {
-                    return arg.num.toFixed(frm.dec);
-                }
-            },
-            strToNum: function(s) {
-                var result = parseFloat(s);
-                if (isNaN(result)) {
-                    throw "Error";
-                }
-                return result;
-            },
-            strToInt: function(s) {
-                var result = parseInt(s);
-                if (isNaN(result)) {
-                    throw "Error";
-                }
-                return result;
-            },
-            dateToStr: function(x) {
-                return (new Date(x)).toLocaleDateString();
-            },
-            timeToStr: function(x) {
-                return (new Date(x)).toLocaleTimeString();
-            },
-            dateTimeToStr: function(x) {
-                return (new Date(x)).toLocaleString();
-            },
-            strToTime: function(x) {
-                return Date.parse(x);
-            },
+        indexOf: function(args) {
+            var idx = args.str.indexOf(args.substr);
+            if (idx >= 0) {
+                return idx;
+            } else {
+                throw "Fail";
+            }
         },
-        string: {
-            nbsp: "&nbsp;",
-            larr: "&larr;",
-            rarr: "&rarr;",
-            uarr: "&uarr;",
-            darr: "&darr;",
-            harr: "&harr;",
-            times: "&times;",
-            laquo: "&laquo;",
-            raquo: "&raquo;",
-            lt: "&lt;",
-            gt: "&gt;",
-            copy: "&copy;",
-            amp: "&",
-            br: "<br/>",
-            symbol: function(dec) {
-                return "&#" + dec + ";";
-            },
-            substr: function(args) {
-                var from = args.from;
-                var to = args.to;
-                if (to.hasOwnProperty("length")) {
-                    return args.str.substr(from, to.length);
-                } else {
-                    if (to.hasOwnProperty("pos")) {
-                        return args.str.slice(from, to.pos);
-                    } else {
-                        return args.str.slice(from);
-                    }
-                }
-            },
-            indexOf: function(args) {
-                var idx = args.str.indexOf(args.substr);
-                if (idx >= 0) {
-                    return idx;
-                } else {
-                    throw "Fail";
-                }
-            },
-            lastIndexOf: function(args) {
-                var idx = args.str.lastIndexOf(args.substr);
-                if (idx >= 0) {
-                    return idx;
-                } else {
-                    throw "Fail";
-                }
-            },
-            length: function(str) {
-                return str.length;
-            },
-            join: function(arg) {
-                return arg.parts.join(arg.sep);
-            },
-            split: function(arg) {
-                return arg.str.split(arg.sep);
-            },
-            repeat: function(arg) {
-                var result = "";
-                for (var i = 0; i < arg.times; i++) {
-                    result.concat(arg.str);
-                }
-                return result;
-            },
-            charAt: function(arg) {
-                return arg.str.charAt(arg.index);
-            },
-            trim: function(str) {
-                return str.trim();
-            },
-            replace: function(arg) {
-                var re = new RegExp(arg.substr, 'g');
+        lastIndexOf: function(args) {
+            var idx = args.str.lastIndexOf(args.substr);
+            if (idx >= 0) {
+                return idx;
+            } else {
+                throw "Fail";
+            }
+        },
+        length: function(str) {
+            return str.length;
+        },
+        join: function(arg) {
+            return arg.parts.join(arg.sep);
+        },
+        split: function(arg) {
+            return arg.str.split(arg.sep);
+        },
+        repeat: function(arg) {
+            var result = "";
+            for (var i = 0; i < arg.times; i++) {
+                result.concat(arg.str);
+            }
+            return result;
+        },
+        charAt: function(arg) {
+            return arg.str.charAt(arg.index);
+        },
+        trim: function(str) {
+            return str.trim();
+        },
+        replace: function(arg) {
+            var re = new RegExp(arg.substr, 'g');
 
-                return arg.str.replace(re, arg.to);
-            },
-            normalize: function(str) {
-                var temp = str.replace(/</g, "&lt;");
-                temp = temp.replace(/\"/g, "\\\"");
-                return temp.replace(/\'/g, "\\\'");
-            },
-            toLowerCase: function(str) {
-                return str.toLowerCase();
-            },
-            toUpperCase: function(str) {
-                return str.toUpperCase();
-            },
+            return arg.str.replace(re, arg.to);
         },
-        json: {
-            parse: function(text) {
-                return JSON.parse(text);
+        normalize: function(str) {
+            var temp = str.replace(/</g, "&lt;");
+            temp = temp.replace(/\"/g, "\\\"");
+            return temp.replace(/\'/g, "\\\'");
+        },
+        toLowerCase: function(str) {
+            return str.toLowerCase();
+        },
+        toUpperCase: function(str) {
+            return str.toUpperCase();
+        },
+    };
+    Core.prototype.json = {
+        parse: function(text) {
+            return JSON.parse(text);
+        }
+    };
+    Core.prototype.xml = {
+        parseText: function(text) {
+            var parser;
+            var xmlDoc;
+            if (window.DOMParser) {
+                parser = new DOMParser();
+                xmlDoc = parser.parseFromString(text, "text/xml");
+            } else {
+                xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
+                xmlDoc.async = false;
+                xmlDoc.loadXML(text);
+            }
+            return xmlDoc.childNodes[0];
+        },
+        getChildren: function(node) {
+            return getChildren(node);
+        },
+        findChild: function(arg) {
+            return findChild(arg.node, arg.name);
+        },
+        findChildren: function(arg) {
+            return findChildren(arg.node, arg.name);
+        },
+        getName: function(node) {
+            return node.nodeName;
+        },
+        getValue: function(node) {
+            return node.nodeValue;
+        },
+        getType: function(node) {
+            return node.nodeType;
+        },
+        getText: function(node) {
+            if (node.childNodes.length === 0) {
+                return "";
+            } else {
+                return node.childNodes[0].nodeValue;
             }
         },
-        xml: {
-            parseText: function(text) {
-                var parser;
-                var xmlDoc;
-                if (window.DOMParser) {
-                    parser = new DOMParser();
-                    xmlDoc = parser.parseFromString(text, "text/xml");
-                } else {
-                    xmlDoc = new ActiveXObject("Microsoft.XMLDOM");
-                    xmlDoc.async = false;
-                    xmlDoc.loadXML(text);
-                }
-                return xmlDoc.childNodes[0];
-            },
-            getChildren: function(node) {
-                return getChildren(node);
-            },
-            findChild: function(arg) {
-                return findChild(arg.node, arg.name);
-            },
-            findChildren: function(arg) {
-                return findChildren(arg.node, arg.name);
-            },
-            getName: function(node) {
-                return node.nodeName;
-            },
-            getValue: function(node) {
-                return node.nodeValue;
-            },
-            getType: function(node) {
-                return node.nodeType;
-            },
-            getText: function(node) {
-                if (node.childNodes.length === 0) {
-                    return "";
-                } else {
-                    return node.childNodes[0].nodeValue;
-                }
-            },
-            getAttribute: function(arg) {
-                var temp = arg.node.getAttribute(arg.name);
-                if (temp === null)
-                    throw "Attribute not found";
-                return temp;
-            },
-            getAttributes: function(node) {
-                var n = node.attributes.length;
-                var attrnode;
-                var result = {};
-                for (var i = 0; i < n; i++) {
-                    attrnode = node.attributes.item(i);
-                    result[attrnode.name] = attrnode.nodeValue;
-                }
-                return result;
-            },
-            innerHTML: function(node) {
-                var ser = new XMLSerializer();
-                var temp = "";
-                for (var i = 0; i < node.childNodes.length; i++) {
-                    temp += ser.serializeToString(node.childNodes[i]);
-                }
-                return temp;
-            }
+        getAttribute: function(arg) {
+            var temp = arg.node.getAttribute(arg.name);
+            if (temp === null)
+                throw "Attribute not found";
+            return temp;
         },
+        getAttributes: function(node) {
+            var n = node.attributes.length;
+            var attrnode;
+            var result = {};
+            for (var i = 0; i < n; i++) {
+                attrnode = node.attributes.item(i);
+                result[attrnode.name] = attrnode.nodeValue;
+            }
+            return result;
+        },
+        innerHTML: function(node) {
+            var ser = new XMLSerializer();
+            var temp = "";
+            for (var i = 0; i < node.childNodes.length; i++) {
+                temp += ser.serializeToString(node.childNodes[i]);
+            }
+            return temp;
+        }
     };
 
     function Applet(xml, lib) {
@@ -420,14 +427,8 @@ var Fabula = (function() {
                     break;
                 case "init":
                     var id = child.getAttribute("id");
-                    // if (!id) {
-                    //     id = "id";
-                    // }
                     this.idname = id;
                     this.initargname = child.getAttribute("arg");
-                    // if (applet.initargname === null) {
-                    //     applet.initargname = "arg";
-                    // }
                     temp = child.getAttribute("random");
                     if (temp !== null) {
                         this.initrandnames = temp.split(",");
@@ -494,18 +495,6 @@ var Fabula = (function() {
             }
         }
 
-        // if (this.extension) {
-        //     if (this.extension in extensions) {
-        //         try {
-        //             extensions[this.extension].init(lib.channels);
-        //             if (trace) trace("extension " + this.extension + " initialized");
-        //         } catch (ex) {
-        //             if (trace) trace("Exception: " + ex.message);
-        //         }
-        //     } else {
-        //         if (trace) trace("extension " + this.extension + " not found");
-        //     }
-        // }
     } //Applet
 
     var handlers = function(applet) {
@@ -562,11 +551,11 @@ var Fabula = (function() {
                     local[applet.statename] = instance;
                 }
                 local[applet.eventname] = e.target.value;
-                if (trace) trace("change " + applet.name + "::" + id + " : " + format(e.target.value));
+                if (applet.trace) applet.trace("change " + applet.name + "::" + id + " : " + format(e.target.value));
                 if (applet.eventtimename) {
                     local[applet.eventtimename] = (new Date());
                 }
-                var result = engine.evalExpr(applet.events.change, local);
+                var result = applet.engine.evalExpr(applet.events.change, local);
                 if (typeof result != 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
@@ -575,16 +564,16 @@ var Fabula = (function() {
             input: function(e) {
                 var id = e.currentTarget.getAttribute("id");
                 var instance = applet.instances[id];
-                var local = clone(lib.globals);
+                var local = clone(applet.lib.globals);
                 if (applet.statename) {
                     local[applet.statename] = instance;
                 }
                 local[applet.eventname] = e.target.value;
-                if (trace) trace("input " + applet.name + "::" + id + " : " + format(e.target.value));
+                if (applet.trace) applet.trace("input " + applet.name + "::" + id + " : " + format(e.target.value));
                 if (applet.eventtimename !== null) {
                     local[applet.eventtimename] = (new Date());
                 }
-                var result = engine.evalExpr(applet.events.input, local);
+                var result = applet.engine.evalExpr(applet.events.input, local);
                 if (typeof result != 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
@@ -1135,10 +1124,6 @@ var Fabula = (function() {
                     for (var i = where.length - 1; i > 0; i--) {
                         stmt = firstExpr(where[i]);
                         if (!evalStmt(stmt, context2, context2)) {
-                            //     for (prop in result) {
-                            //         context2[prop] = result[prop];
-                            //     }
-                            // } else {
                             if (trace) trace("calc -> failed");
                             return undefined;
                         }
@@ -1224,7 +1209,7 @@ var Fabula = (function() {
                             if (typeof result != 'undefined') {
                                 array.push(result);
                             } else {
-                                if(trace) trace("array -> failed");
+                                if (trace) trace("array -> failed");
                                 return undefined;
                             }
                         }
@@ -1656,7 +1641,7 @@ var Fabula = (function() {
         };
 
         var evalStmt = function(stmt, context, output) {
-            function list() {
+            function list(output) {
                 var result = "";
                 for (var v in output) {
                     result += v + " ";
@@ -1690,23 +1675,14 @@ var Fabula = (function() {
                     }
                 },
                 all: function(stmt, context, output) {
-                    // var prop;
-                    // var result = {};
-                    // var context2 = clone(context);
                     var temp = getChildren(stmt);
                     for (var i = 0; i < temp.length; i++) {
                         if (!evalStmt(temp[i], context, output)) {
-                            // for (prop in result) {
-                            // context2[prop] = result[prop];
-                            // output[prop] = result[prop];
-                            // }
-                            // result = {};
-                            // } else {
                             if (trace) trace("all -> failed");
                             return false;
                         }
                     }
-                    if (trace) trace("all " + list() + "-> success");
+                    if (trace) trace("all -> success");
                     return true;
                 },
                 any: function(stmt, context, output) {
@@ -1715,10 +1691,7 @@ var Fabula = (function() {
                     var temp = getChildren(stmt);
                     for (var i = 0; i < temp.length; i++) {
                         if (evalStmt(temp[i], context, output)) {
-                            // for (prop in result) {
-                            //     output[prop] = result[prop];
-                            // }
-                            if (trace) trace("any " + list() + "-> success");
+                            if (trace) trace("any -> success");
                             return true;
                         }
                     }
@@ -1732,7 +1705,7 @@ var Fabula = (function() {
                         for (prop in result) {
                             output[prop] = result[prop];
                         }
-                        if (trace) trace("unwrap " + list() + "-> success");
+                        if (trace) trace("unwrap " + list(result) + "-> success");
                         return true;
                     } else {
                         if (trace) trace("unwrap -> failed");
@@ -1756,6 +1729,7 @@ var Fabula = (function() {
             };
         }
         var prop, temp, name, i;
+        var lib = this;
         this.id = id; //this library's id in the parent library
         this.trace = trace;
         this.parent = parent;
@@ -1764,7 +1738,7 @@ var Fabula = (function() {
         this.channels = {};
         this.applets = {};
         this.globals = {
-            core: clone(core) //more globals will be added at init
+            core: new Core(this) //more globals will be added at init
         };
         this.idlelist = [];
         this.extensions = {};
@@ -1776,17 +1750,8 @@ var Fabula = (function() {
         this.varlist = varlist;
         this.chlist = chlist;
         this.applist = applist;
-
-        var lib = this;
-        this.globals.core.appletclass = function(name) {
-            if (name in lib.applets) {
-                return lib.applets[name].class();
-            } else {
-                return '';
-            }
-        };
-        this.common = [];
         //read globals
+        this.common = [];
         temp = findChildren(xml, "common");
         if (temp.length > 0) {
             temp = getChildren(temp[0]);
@@ -1989,14 +1954,14 @@ var Fabula = (function() {
                 for (i in ids) {
                     ids[i].applet.create(ids[i].element, ids[i].applet.lib.applets);
                 }
-                if (lib.parent) lib.parent.resume();
+                // if (lib.parent) lib.parent.resume();
+                for (i = 0; i < lib.idlelist.length; i++) {
+                    try {
+                        lib.idlelist[i]();
+                    } catch (e) {}
+                }
                 if (!lib.active) { //nothing more to do - run idle functions
                     if (trace && !lib.parent) trace("idle");
-                    for (i = 0; i < lib.idlelist.length; i++) {
-                        try {
-                            lib.idlelist[i]();
-                        } catch (e) {}
-                    }
                 }
             });
         }
