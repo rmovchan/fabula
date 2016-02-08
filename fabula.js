@@ -949,7 +949,6 @@ var Fabula = (function() {
                     if (rel === match[5] || rel === "=") {
                         next();
                         var subj2 = parseSubject();
-                        // next();
                         switch (rel) {
                             case "'le'":
                                 return subj1 <= subj2;
@@ -1484,19 +1483,19 @@ var Fabula = (function() {
                         var context2 = clone(context);
                         var aa = temp2[0].trim();
                         var bb = temp2[1].trim();
-                        var temp3 = firstExpr(temp);
+                        var stmt = firstExpr(temp);
+                        var output = {};
                         var sortfun = function(a, b) {
-                            var output = {};
                             context2[aa] = a;
                             context2[bb] = b;
-                            var result = evalStmt(temp3, context2, output);
-                            if (typeof result != 'undefined') {
+                            var result = evalStmt(stmt, context2, output);
+                            if (result) {
                                 return -1;
                             } else {
                                 context2[aa] = b;
                                 context2[bb] = a;
-                                result = evalStmt(temp3, context2, output);
-                                if (typeof result != 'undefined') {
+                                result = evalStmt(stmt, context2, output);
+                                if (result) {
                                     return 1;
                                 } else {
                                     return 0;
@@ -1769,7 +1768,6 @@ var Fabula = (function() {
             };
         }
         var prop, temp, name, i;
-        var lib = this;
         this.id = id; //this library's id in the parent library
         this.trace = trace;
         this.parent = parent;
@@ -1799,7 +1797,16 @@ var Fabula = (function() {
                 this.common.push(temp[i]);
             }
         }
-        //readd channels
+        var exports = findChildren(xml, "export");
+        if (exports.length > 0) {
+            //read channels for export
+            temp = findChildren(exports[0], "channel");
+            for (i = 0; i < temp.length; i++) {
+                name = temp[i].getAttribute("name");
+                this.channels[name] = new Channel(temp[i], this);
+            }
+        }
+        //read channels
         temp = findChildren(xml, "channel");
         for (i = 0; i < temp.length; i++) {
             name = temp[i].getAttribute("name");
@@ -2048,7 +2055,7 @@ var Fabula = (function() {
     };
 
     return {
-        version: "0.29",
+        version: "0.30",
         start: function(url) {
             console.log("Fabula Interpreter v" + this.version);
             loadLib(url);
