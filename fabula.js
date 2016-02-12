@@ -405,7 +405,7 @@ var Fabula = (function() {
         this.trace = trace;
         this.input = {};
         this.initrandnames = [];
-        this.initActions = [];
+        this.actions = [];
         this.resprandnames = [];
         this.respActions = [];
         this.extension = xml.getAttribute("extension");
@@ -435,39 +435,11 @@ var Fabula = (function() {
                     }
                     this.initcontentname = child.getAttribute("content");
                     this.inittimename = child.getAttribute("time");
-                    temp = findChildren(child, "state");
-                    if (temp.length === 1) {
-                        this.initState = firstExpr(temp[0]);
-                    } else {
-                        this.initState = null;
-                    }
+                    this.initState = firstExpr(child);
                     temp = findChildren(child, "actions");
-                    if (temp.length === 1) {
-                        this.initActions = getChildren(temp[0]);
-                    } else {
-                        this.initActions = [];
-                    }
                     break;
-                case "proceed":
-                    this.inputname = findChild(child, "on").getAttribute("input");
-                    temp = child.getAttribute("random");
-                    if (temp !== null) {
-                        this.resprandnames = temp.split(",");
-                    }
-                    this.resptimename = child.getAttribute("time");
-                    temp = findChildren(child, "before");
-                    if (temp.length === 1) {
-                        this.respBefore = getChildren(temp[0]);
-                    } else {
-                        this.respBefore = [];
-                    }
-                    this.respState = firstExpr(findChild(child, "state"));
-                    temp = findChildren(child, "after");
-                    if (temp.length === 1) {
-                        this.respAfter = getChildren(temp[0]);
-                    } else {
-                        this.respAfter = [];
-                    }
+                case "actions":
+                    this.actions = getChildren(child);
                     break;
                 case "events":
                     this.eventname = child.getAttribute("data");
@@ -478,12 +450,17 @@ var Fabula = (function() {
                     this.eventtimename = child.getAttribute("time");
                     break;
                 case "receive":
-                    temp = getChildren(child);
+                    temp = child.getAttribute("random");
+                    if (temp !== null) {
+                        this.resprandnames = temp.split(",");
+                    }
+                    this.resptimename = child.getAttribute("time");
+                    temp = getChildren(child); //from clauses
                     for (var j = 0; j < temp.length; j++) {
                         if (temp[j].hasAttribute("channel")) {
                             this.channels[temp[j].getAttribute("channel")] = {
                                 data: child.getAttribute("data"),
-                                expr: firstExpr(temp[j])
+                                expr: firstExpr(temp[j]) //new state expression
                             };
                         }
                     }
@@ -716,10 +693,11 @@ var Fabula = (function() {
                     }
                 }
                 this.input[newid] = [];
-                for (i = 0; i < this.initActions.length; i++) {
-                    result = this.engine.evalExpr(this.initActions[i], context);
+                for (i = 0; i < this.actions.length; i++) {
+                    result = this.engine.evalExpr(this.actions[i], context);
                     if (typeof result != 'undefined') {
-                        result(this, newid);
+                        this.lib.queue.push(result);
+                        // result();
                     }
                 }
                 for (var appname in this.lib.applets) {
@@ -739,106 +717,8 @@ var Fabula = (function() {
         }
     };
 
-    Applet.prototype.run = function(id) { //process all messages in the queue
-        var i, j, k;
-        var instance = this.instances[id];
-        var action;
-        var queue = this.input[id];
-        var prop;
-        var appname;
-        var result;
-        var context = clone(this.lib.globals);
-        var trace = this.trace;
-        context[this.statename] = instance;
-        i = 0;
-        while (i < queue.length) {
-            context[this.inputname] = queue[i];
-            for (j = 0; j < this.resprandnames.length; j++) {
-                context[this.resprandnames[j]] = Math.random();
-            }
-            if (this.resptimename) {
-                context[this.resptimename] = (new Date());
-            }
-            if (trace) trace("proceed " + this.name + "::" + id + " : " + format(queue[i]));
-            for (j = 0; j < this.respBefore.length; j++) {
-                result = engine.evalExpr(this.respBefore[j], context);
-                if (typeof result != 'undefined') {
-                    result(this, id);
-                }
-            }
-            result = this.engine.evalExpr(this.respState, context);
-            if (typeof result != 'undefined') {
-                this.instances[id] = result;
-                if (this.content) { //render view
-                    context[this.idname] = id;
-                    context[this.statename] = result;
-                    result = this.engine.evalExpr(this.content, context);
-                    if (typeof result != 'undefined') {
-                        var element = document.getElementById(id);
-                        element.innerHTML = result;
-                        for (appname in this.lib.applets) {
-                            var app = this.lib.applets[appname];
-                            var elements = element.getElementsByClassName(app.class());
-                            //recreate children
-                            for (k = 0; k < elements.length; k++) {
-                                var child = elements[k];
-                                var id2 = child.getAttribute("id");
-                                if (id2 && app.exists(id2)) {
-                                    app.destroy(id2);
-                                }
-                                app.create(child);
-                            }
-                        }
-                        // if (lib.parent) {
-                        //     for (appname in lib.parent.applets) {
-                        //         app = applet.library.parent.applets[appname];
-                        //         elements = element.getElementsByClassName(app.class());
-                        //         for (k = 0; k < elements.length; k++) {
-                        //             child = elements[k];
-                        //             id2 = child.getAttribute("id");
-                        //             if (id2 !== null && id2 !== id) {
-                        //                 if (app.exists(id2)) {
-                        //                     app.destroy(id2);
-                        //                 }
-                        //                 app.create(id2, child, app.lib.applets);
-                        //             }
-                        //         }
-                        //     }
-                        // }
-                    }
-                }
-                for (j = 0; j < this.respAfter.length; j++) {
-                    result = this.engine.evalExpr(this.respAfter[j], context);
-                    if (typeof result != 'undefined') {
-                        result(this, id);
-                    }
-                }
-                if (this.extension) {
-                    if (this.extension in this.lib.extensions) {
-                        try {
-                            this.lib.extensions[this.extension].react(id, queue[i], context);
-                        } catch (ex) {
-                            if (trace) trace("Exception: " + ex.message);
-                        }
-                    } else {
-                        if (trace) trace("applet extension " + this.extension + " not found");
-                    }
-                }
-            }
-            i++;
-        }
-        this.input[id] = [];
-    };
-
     Applet.prototype.exists = function(id) { //does an instance exist for given element id?
         return id in this.instances;
-    };
-
-    Applet.prototype.respond = function(id, msg) { //place message in the queue
-        if (id in this.input) {
-            this.input[id].push(msg);
-            this.lib.resume();
-        }
     };
 
     Applet.prototype.destroy = function(id) { //destroy instance
@@ -862,19 +742,55 @@ var Fabula = (function() {
 
     Channel.prototype.send = function(data) { //send data to all targets of the channel
         var output = {};
+        var i;
         if (this.trace) this.trace("send " + this.name + " : " + format(data));
-        for (var i = 0; i < this.targets.length; i++) {
+        for (i = 0; i < this.targets.length; i++) {
             var target = this.targets[i];
+            var applet = target.applet;
             if (this.trace) this.trace("receive " + target.applet.name);
-            var local = clone(target.applet.lib.globals);
-            local[target.data] = data;
-            for (var id in target.applet.instances) {
-                var state = target.applet.instances[id];
-                local[target.applet.statename] = state;
-                var result = this.engine.evalExpr(target.expr, local);
+            var local = clone(applet.lib.globals);
+            local[target.data] = data; //data received
+            for (var id in applet.instances) {
+                var state = applet.instances[id];
+                local[applet.statename] = state; //old state
+                for (var j = 0; j < applet.resprandnames.length; j++) {
+                    local[applet.resprandnames[j]] = Math.random(); //random numbers (if requested)
+                }
+                if (applet.resptimename) {
+                    local[applet.resptimename] = (new Date()); //current time (if requested)
+                }
+                var result = applet.engine.evalExpr(target.expr, local); //new state
                 if (typeof result != 'undefined') {
-                    if (this.trace) this.trace("accept " + target.applet.name + "::" + id + " : " + format(data));
-                    target.applet.respond(id, result);
+                    if (this.trace) this.trace("accept " + applet.name + " : " + format(data));
+                    local[applet.statename] = result;
+                    applet.instances[id] = result;
+                    if (applet.content) { //state changed - render view
+                        result = applet.engine.evalExpr(applet.content, local);
+                        if (typeof result != 'undefined') {
+                            var element = document.getElementById(id);
+                            element.innerHTML = result;
+                        }
+                    }
+                    //perform actions
+                    for (j = 0; j < applet.actions.length; j++) {
+                        result = applet.engine.evalExpr(applet.actions[j], local);
+                        if (typeof result != 'undefined') {
+                            //result();
+                            applet.lib.queue.push(result);
+                        }
+                    }
+                    applet.lib.resume();
+                    if (applet.extension) {
+                        if (applet.extension in applet.lib.extensions) {
+                            try {
+                                applet.lib.extensions[applet.extension].react(id, this.name, data);
+                            } catch (ex) {
+                                if (applet.trace) applet.trace("Exception: " + ex.message);
+                            }
+                        } else {
+                            if (applet.trace) applet.trace("applet extension " + applet.extension + " not found");
+                        }
+                    }
                 }
             }
         }
@@ -1025,11 +941,7 @@ var Fabula = (function() {
                         next();
                     } else
                     if (token === match[3]) {
-                        // if (token[0] === "null") {
-                        //     res = null;
-                        // } else {
                         res = context[token];
-                        // }
                         next();
                         while (token !== null) {
                             if (!(token === "(" || token === "[" || token === "@" || token === ".")) break;
@@ -1197,6 +1109,7 @@ var Fabula = (function() {
                 },
                 list: function(expr, context) {
                     var temp = getChildren(expr);
+                    var array = [];
                     array.length = temp.length;
                     for (var i = 0; i < temp.length; i++) {
                         var result = evalExpr(temp[i], context);
@@ -1517,9 +1430,9 @@ var Fabula = (function() {
                         result = evalExpr(temp, context);
                         if (typeof result != 'undefined') {
                             if (trace) trace("delay -> success");
-                            return function(applet, id) {
+                            return function() {
                                 setTimeout(function() {
-                                    action(applet, id);
+                                    action();
                                 }, result);
                             };
                         } else {
@@ -1531,28 +1444,15 @@ var Fabula = (function() {
                         return undefined;
                     }
                 },
-                take: function(expr, context) {
-                    var result = evalExpr(firstExpr(expr), context);
-                    if (typeof result != 'undefined') {
-                        if (trace) trace("take -> success");
-                        return function(applet, id) {
-                            if (trace) trace("perform take " + applet.name + "::" + id);
-                            applet.respond(id, result);
-                        };
-                    } else {
-                        if (trace) trace("take -> failed");
-                        return undefined;
-                    }
-                },
                 each: function(expr, context) {
                     var result = evalExpr(firstExpr(expr), context);
                     if (typeof result != 'undefined') {
                         var list = result;
                         if (trace) trace("each -> success");
-                        return function(applet, id) {
-                            if (trace) trace("perform each " + applet.name + "::" + id);
+                        return function() {
+                            if (trace) trace("perform each");
                             for (var i = 0; i < list.length; i++) {
-                                list[i](applet, id);
+                                list[i]();
                             }
                         };
                     } else {
@@ -1564,8 +1464,8 @@ var Fabula = (function() {
                     var result = evalExpr(firstExpr(expr), context);
                     if (typeof result != 'undefined') {
                         var channel = lib.channels[expr.getAttribute("channel")];
-                        return function(applet, id) {
-                            if (trace) trace("perform send " + applet.name + "::" + id + " data " + format(result) + " to " + expr.getAttribute("channel"));
+                        return function() {
+                            if (trace) trace("perform send data " + format(result) + " to " + expr.getAttribute("channel"));
                             channel.send(result);
                         };
                     } else {
@@ -1581,8 +1481,8 @@ var Fabula = (function() {
                         var resultname = succexpr.getAttribute("result");
                         var errexpr = findChild(expr, "error");
                         var msgname = errexpr.getAttribute("message");
-                        return function(applet, id) {
-                            if (trace) trace("perform get " + applet.name + "::" + id);
+                        return function() {
+                            if (trace) trace("perform get");
                             var xmlhttp = new XMLHttpRequest();
                             xmlhttp.onreadystatechange = function() {
                                 if (xmlhttp.readyState == 4) {
@@ -1594,7 +1494,7 @@ var Fabula = (function() {
                                         result = evalExpr(succexpr, local);
                                         if (typeof result != 'undefined') {
                                             if (trace) trace("get success processing");
-                                            result(applet, id);
+                                            result();
                                         }
                                     } else {
                                         if (trace) trace("get-error: " + format(xmlhttp.responseText));
@@ -1602,7 +1502,7 @@ var Fabula = (function() {
                                         result = evalExpr(errexpr, local);
                                         if (typeof result != 'undefined') {
                                             if (trace) trace("get error processing");
-                                            result(applet, id);
+                                            result();
                                         }
 
                                     }
@@ -1632,8 +1532,8 @@ var Fabula = (function() {
                         var resultname = succexpr.getAttribute("result");
                         var errexpr = findChild(expr, "error");
                         var msgname = errexpr.getAttribute("message");
-                        return function(applet, id) {
-                            if (trace) trace("perform post " + applet.name + "::" + id);
+                        return function() {
+                            if (trace) trace("perform post");
                             var xmlhttp = new XMLHttpRequest();
                             xmlhttp.onreadystatechange = function() {
                                 if (xmlhttp.readyState == 4) {
@@ -1645,7 +1545,7 @@ var Fabula = (function() {
                                         result = evalExpr(succexpr, local);
                                         if (typeof result != 'undefined') {
                                             if (trace) trace("post success processing");
-                                            result(applet, id);
+                                            result();
                                         }
                                     } else {
                                         if (trace) trace("post-error: " + format(xmlhttp.responseText));
@@ -1653,7 +1553,7 @@ var Fabula = (function() {
                                         result = evalExpr(errexpr, local);
                                         if (typeof result != 'undefined') {
                                             if (trace) trace("post error processing");
-                                            result(applet, id);
+                                            result();
                                         }
 
                                     }
@@ -1775,6 +1675,7 @@ var Fabula = (function() {
         this.pending = 0;
         this.channels = {};
         this.applets = {};
+        this.queue = [];
         this.globals = {
             core: new Core(this) //more globals will be added at init
         };
@@ -1879,7 +1780,7 @@ var Fabula = (function() {
                 throw "Common section failed";
             }
         }
-        delete this.common;
+        // delete this.common;
         //find targets for each channel
         for (name in this.applets) {
             applet = this.applets[name];
@@ -1911,9 +1812,9 @@ var Fabula = (function() {
 
         if (this.parent) { //now we can pass this library's exports to parent library, if any
             this.parent.doimport(this, this.id, this.varlist, this.chlist, this.applist);
-            delete this.varlist;
-            delete this.chlist;
-            delete this.applist;
+            // delete this.varlist;
+            // delete this.chlist;
+            // delete this.applist;
         } else {
             this.resume(); //the main library initialized - start it
         }
@@ -1965,42 +1866,33 @@ var Fabula = (function() {
                 var elements;
                 var element;
                 var id;
-                var ids;
                 var i;
+                var action;
                 lib.active = false;
-                // trace('RUN ' + this.path());
                 for (name in lib.applets) {
                     applet = lib.applets[name];
                     for (id in applet.instances) {
                         element = document.getElementById(id);
                         if (!element) {
-                            applet.destroy(id);
-                        } else {
-                            applet.run(id);
-                        }
+                            if(applet.trace) applet.trace("destroy " + id);
+                            applet.destroy(id); //destroy obsolete instances
+                        } 
                     }
-                }
-                ids = [];
-                for (name in lib.applets) {
-                    applet = lib.applets[name];
                     elements = document.getElementsByClassName(applet.class());
                     for (i = 0; i < elements.length; i++) {
                         element = elements[i];
                         id = element.getAttribute("id");
                         if (!id || !applet.exists(id)) {
-                            // if (!applet.exists(id)) {
-                            // applet.create(id, element, lib.applets);
-                            ids.push({
-                                applet: applet,
-                                element: element
-                            });
-                            // }
+                            applet.create(element); //create new instances
                         }
                     }
                 }
-                for (i in ids) {
-                    ids[i].applet.create(ids[i].element, ids[i].applet.lib.applets);
+                //execute all actions in queue
+                for(i = 0; i < lib.queue.length; i++) {
+                    action = lib.queue[i];
+                    action();
                 }
+                lib.queue = [];
                 // if (lib.parent) lib.parent.resume();
                 if (!lib.active) { //nothing more to do - run idle functions
                     for (i = 0; i < lib.idlelist.length; i++) {
@@ -2055,7 +1947,7 @@ var Fabula = (function() {
     };
 
     return {
-        version: "0.30",
+        version: "0.31",
         start: function(url) {
             console.log("Fabula Interpreter v" + this.version);
             loadLib(url);
