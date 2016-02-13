@@ -1815,6 +1815,9 @@ var Fabula = (function() {
             // delete this.varlist;
             // delete this.chlist;
             // delete this.applist;
+                for (i = 0; i < this.idlelist.length; i++) {
+                    this.parent.idlelist.push(this.idlelist[i]);
+                }
         } else {
             this.resume(); //the main library initialized - start it
         }
@@ -1893,8 +1896,8 @@ var Fabula = (function() {
                     action();
                 }
                 lib.queue = [];
-                // if (lib.parent) lib.parent.resume();
-                if (!lib.active) { //nothing more to do - run idle functions
+                if (lib.parent) lib.parent.resume();
+                if (!lib.active && !lib.parent) { //nothing more to do - run idle functions
                     for (i = 0; i < lib.idlelist.length; i++) {
                         try {
                             lib.idlelist[i]();
@@ -1907,7 +1910,7 @@ var Fabula = (function() {
     };
 
     var libcache = {};
-    var pending = 0; //number of asynchronous loadLibs
+    // var pending = 0; //number of asynchronous loadLibs
 
     function loadLib(url, parent, id, varlist, chlist, applist) {
         var lib;
@@ -1915,12 +1918,12 @@ var Fabula = (function() {
         if (url in libcache) { //optimisation: avoid reading library with same URL again
             lib = new Library(libcache[url].childNodes[0], parent, id, varlist, chlist, applist);
         } else {
-            pending++;
+            // pending++;
             asyncRequest('GET', url,
                 function(xml) {
                     lib = new Library(xml.childNodes[0], parent, id, varlist, chlist, applist);
                     console.log("library " + url + " loaded");
-                    pending--;
+                    // pending--;
                     libcache[url] = xml;
                 });
         }
