@@ -118,7 +118,7 @@ FabDebugger = function(pid) {
             var that = this;
             firebase.child("status").on("value", function(snap) {
                 if (snap) status = snap.val();
-                that.resume(reslist);
+                if(reslist) that.resume(reslist);
             });
         },
         exception: function(message) {},
