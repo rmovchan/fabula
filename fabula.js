@@ -1,8 +1,8 @@
 /*
- * =======  Fabula Interpreter  =======
+ * ======  Fabula Interpreter  ======
  *     © Aha! Factor Pty Ltd, 2016
  *       http://fabwebtools.com
- * ====================================
+ * ===========================
  */
 var Fabula = (function() {
     "use strict";
@@ -10,7 +10,7 @@ var Fabula = (function() {
     var asyncRequest = function(method, uri, callback, postData) {
         var xhr = new XMLHttpRequest();
         xhr.onreadystatechange = function() {
-            if (xhr.readyState == 4 && xhr.status == 200) {
+            if (xhr.readyState === 4 && xhr.status === 200) {
                 if (callback) {
                     callback(xhr.responseXML);
                 }
@@ -25,7 +25,7 @@ var Fabula = (function() {
         var i = 0;
         var result = [];
         for (i = 0; i < node.childNodes.length; i++) {
-            if (node.childNodes[i].nodeType != 8 && (node.childNodes[i].nodeType != 3 || node.childNodes[i].nodeValue.trim() !== "")) {
+            if (node.childNodes[i].nodeType !== 8 && (node.childNodes[i].nodeType !== 3 || node.childNodes[i].nodeValue.trim() !== "")) {
                 result.push(node.childNodes[i]);
             }
         }
@@ -34,7 +34,7 @@ var Fabula = (function() {
 
     function firstExpr(node) {
         var first = 0;
-        while (node.childNodes[first].nodeType == 8 || (node.childNodes[first].nodeType == 3 && node.childNodes[first].nodeValue.trim() === "")) {
+        while (node.childNodes[first].nodeType === 8 || (node.childNodes[first].nodeType === 3 && node.childNodes[first].nodeValue.trim() === "")) {
             first++;
         }
         return node.childNodes[first];
@@ -54,7 +54,7 @@ var Fabula = (function() {
         var i = 0;
         var result = [];
         for (i = 0; i < node.childNodes.length; i++) {
-            if (node.childNodes[i].nodeName.toLowerCase() == name.toLowerCase()) {
+            if (node.childNodes[i].nodeName.toLowerCase() === name.toLowerCase()) {
                 result.push(node.childNodes[i]);
             }
         }
@@ -68,59 +68,6 @@ var Fabula = (function() {
         }
         return result;
     }
-
-    // var format = (function() {
-    //     var flevel = 0;
-
-    //     return function(value) {
-    //         var prop;
-    //         var i;
-    //         var result;
-
-    //         if (value && typeof value === "function") {
-    //             return '<function>';
-    //         } else
-    //         if (value && typeof value === "object") {
-    //             if ('outerHTML' in value) {
-    //                 return '<XML>';
-    //             }
-    //             result = "";
-    //             if (flevel > 4) {
-    //                 flevel = 0;
-    //                 return "{ ... }";
-    //             }
-    //             flevel++;
-    //             for (prop in value) {
-    //                 if (result.length > 1000) {
-    //                     result += ", ... ";
-    //                     break;
-    //                 }
-    //                 if (result !== "") {
-    //                     result += ", ";
-    //                 }
-    //                 try {
-    //                     result += prop + ": " + format(value[prop]);
-    //                 } catch (e) {
-    //                     result = 'Error';
-    //                 }
-    //             }
-    //             flevel--;
-    //             if (result === "") {
-    //                 return "";
-    //             } else {
-    //                 return "{" + result + "}";
-    //             }
-    //         } else if (typeof value === "string") {
-    //             if (value.length > 300) {
-    //                 return '"' + value.substr(0, 300) + ' ... "';
-    //             } else {
-    //                 return '"' + value + '"';
-    //             }
-    //         } else {
-    //             return value;
-    //         }
-    //     };
-    // })();
 
     var parseQueryString = function(queryString) {
         var params = {},
@@ -192,6 +139,11 @@ var Fabula = (function() {
             var tmp = new Date(t);
             return Number(new Date(tmp.getUTCFullYear(), tmp.getUTCMonth(), tmp.getUTCDate(), 0, 0, 0, 0));
         },
+        timeOf: function(t) {
+            var tmp = new Date(t);
+            tmp = Number(new Date(tmp.getUTCFullYear(), tmp.getUTCMonth(), tmp.getUTCDate(), 0, 0, 0, 0));
+            return t - tmp;
+        },
         encode: function(arg) {
             return Number(new Date(arg.year, arg.month - 1, arg.day, arg.hours, arg.min, arg.sec, arg.msec));
         },
@@ -262,11 +214,11 @@ var Fabula = (function() {
         times: "&times;",
         laquo: "&laquo;",
         raquo: "&raquo;",
-        lt: "&lt;",
-        gt: "&gt;",
+        // lt: "&lt;",
+        // gt: "&gt;",
         copy: "&copy;",
-        amp: "&",
-        br: "<br/>",
+        // amp: "&",
+        // br: "<br/>",
         symbol: function(dec) {
             return "&#" + dec + ";";
         },
@@ -333,6 +285,13 @@ var Fabula = (function() {
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&apos;');
         },
+        decodeHTML: function(str) {
+            return str.replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&apos;/g, "'");
+        },
         toLowerCase: function(str) {
             return str.toLowerCase();
         },
@@ -349,7 +308,23 @@ var Fabula = (function() {
     };
     Core.prototype.json = {
         parse: function(text) {
-            return JSON.parse(text);
+            try {
+                var temp = JSON.parse(text);
+                if (typeof temp === 'boolean') {
+                    if (temp) {
+                        return null;
+                    } else {
+                        return undefined;
+                    }
+                } else {
+                    return temp;
+                }
+            } catch (ex) {
+                return undefined;
+            }
+        },
+        stringify: function(value) {
+            return JSON.stringify(value);
         }
     };
     Core.prototype.xml = {
@@ -446,9 +421,9 @@ var Fabula = (function() {
         this.engine = new Engine(lib);
         this.lib = lib;
         this.debug = debug;
-        this.initrandnames = [];
+        // this.initrandnames = [];
         this.actions = [];
-        this.resprandnames = [];
+        // this.resprandnames = [];
         this.respActions = [];
         this.extension = xml.getAttribute("extension");
         this.next = 0;
@@ -481,13 +456,14 @@ var Fabula = (function() {
                     var id = child.getAttribute("id");
                     this.idname = id;
                     this.initargname = child.getAttribute("arg");
-                    temp = child.getAttribute("random");
-                    if (temp !== null) {
-                        this.initrandnames = temp.split(",");
-                        for (j = 0; j < temp.length; j++) {
-                            this.initrandnames[j] = this.initrandnames[j].trim();
-                        }
-                    }
+                    this.initdataname = child.getAttribute("data");
+                    // temp = child.getAttribute("random");
+                    // if (temp !== null) {
+                    //     this.initrandnames = temp.split(",");
+                    //     for (j = 0; j < temp.length; j++) {
+                    //         this.initrandnames[j] = this.initrandnames[j].trim();
+                    //     }
+                    // }
                     this.initcontentname = child.getAttribute("content");
                     this.inittimename = child.getAttribute("time");
                     this.initState = firstExpr(child);
@@ -505,13 +481,13 @@ var Fabula = (function() {
                     this.eventtimename = child.getAttribute("time");
                     break;
                 case "receive":
-                    temp = child.getAttribute("random");
-                    if (temp !== null) {
-                        this.resprandnames = temp.split(",");
-                        for (j = 0; j < temp.length; j++) {
-                            this.resprandnames[j] = this.resprandnames[j].trim();
-                        }
-                    }
+                    // temp = child.getAttribute("random");
+                    // if (temp !== null) {
+                    //     this.resprandnames = temp.split(",");
+                    //     for (j = 0; j < temp.length; j++) {
+                    //         this.resprandnames[j] = this.resprandnames[j].trim();
+                    //     }
+                    // }
                     this.resptimename = child.getAttribute("time");
                     temp = getChildren(child); //from clauses
                     for (j = 0; j < temp.length; j++) {
@@ -548,11 +524,11 @@ var Fabula = (function() {
                 var trace = applet.debug ? applet.debug.traceactions(id) : null;
                 // if (trace) trace.clear();
                 var result = applet.engine.evalExpr(applet.events.click, local, trace);
-                if (typeof result != 'undefined') {
+                if (typeof result !== 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
                 }
-                e.preventDefault();
+                // e.preventDefault();
                 return false;
             },
             change: function(e) {
@@ -569,7 +545,7 @@ var Fabula = (function() {
                 var trace = applet.debug ? applet.debug.traceactions(id) : null;
                 // if (trace) trace.clear();
                 var result = applet.engine.evalExpr(applet.events.change, local, trace);
-                if (typeof result != 'undefined') {
+                if (typeof result !== 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
                 }
@@ -589,7 +565,7 @@ var Fabula = (function() {
                 var trace = applet.debug ? applet.debug.traceactions(id) : null;
                 // if (trace) trace.clear();
                 var result = applet.engine.evalExpr(applet.events.input, local, trace);
-                if (typeof result != 'undefined') {
+                if (typeof result !== 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
                 }
@@ -617,7 +593,7 @@ var Fabula = (function() {
                 var trace = applet.debug ? applet.debug.traceactions(id) : null;
                 // if (trace) trace.clear();
                 var result = applet.engine.evalExpr(applet.events.submit, local, trace);
-                if (typeof result != 'undefined') {
+                if (typeof result !== 'undefined') {
                     e.stopPropagation();
                     result(applet, id);
                 }
@@ -642,7 +618,7 @@ var Fabula = (function() {
 
     Applet.prototype.create = function(element) { //create an instance attached to element
         var context = clone(this.lib.globals);
-        var arg, i, newid, result, app, prop;
+        var arg, i, newid, result, app, prop, dict;
         var h = handlers(this);
         if (element) {
             if (element.attributes["data-arg"]) {
@@ -651,11 +627,21 @@ var Fabula = (function() {
                 arg = "";
             }
             context[this.initargname] = arg;
+            if (this.initdataname) {
+                dict = {};
+                for (i = 0; i < element.attributes.length; i++) {
+                    prop = element.attributes[i].name;
+                    if (prop.substr(0, 5) === "data-") {
+                        dict[prop.slice(5)] = element.attributes[i].value;
+                    }
+                }
+                context[this.initdataname] = dict;
+            }
             newid = this.class() + '-' + this.next++;
             element.id = newid;
-            for (i = 0; i < this.initrandnames.length; i++) {
-                context[this.initrandnames[i]] = Math.random();
-            }
+            // for (i = 0; i < this.initrandnames.length; i++) {
+            //     context[this.initrandnames[i]] = Math.random();
+            // }
             if (this.inittimename) {
                 context[this.inittimename] = Number(new Date());
             }
@@ -675,7 +661,7 @@ var Fabula = (function() {
                 if (trace) trace.success('{}', null);
             }
             if (this.debug) this.debug.create(this.name, newid, context, result);
-            if (typeof result != 'undefined') {
+            if (typeof result !== 'undefined') {
                 this.instances[newid] = result;
                 context[this.statename] = result;
                 if (this.extension) {
@@ -689,7 +675,7 @@ var Fabula = (function() {
                 for (i = 0; i < this.actions.length; i++) { //perform actions
                     // if (trace) trace.clear();
                     result = this.engine.evalExpr(this.actions[i], context, trace);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         this.lib.queue.push(result);
                     }
                 }
@@ -697,9 +683,9 @@ var Fabula = (function() {
                     var value = this.channels[chname].value;
                     if (typeof value !== "undefined") {
                         context[this.channels[chname].data] = value;
-                        for (var j = 0; j < this.resprandnames.length; j++) {
-                            context[this.resprandnames[j]] = Math.random(); //random numbers (if requested)
-                        }
+                        // for (var j = 0; j < this.resprandnames.length; j++) {
+                        //     context[this.resprandnames[j]] = Math.random(); //random numbers (if requested)
+                        // }
                         if (this.resptimename) {
                             context[this.resptimename] = Number(new Date()); //current time (if requested)
                         }
@@ -707,24 +693,24 @@ var Fabula = (function() {
                         if (trace) trace.clear();
                         result = this.engine.evalExpr(this.channels[chname].expr, context, trace); //new state
                         if (this.debug) this.debug.receive(this.name, newid, chname, context, result);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             this.instances[newid] = result;
                             context[this.statename] = result;
                             trace = this.debug ? this.debug.traceactions(newid) : null;
                             for (i = 0; i < this.actions.length; i++) { //perform actions
                                 result = this.engine.evalExpr(this.actions[i], context, trace ? trace.create() : null);
-                                if (typeof result != 'undefined') {
+                                if (typeof result !== 'undefined') {
                                     this.lib.queue.push(result);
                                     resume();
                                 }
                             }
-                            if (this.extension) {
-                                if (this.extension in this.lib.extensions) {
-                                    try {
-                                        if ('react' in this.lib.extensions[this.extension]) this.lib.extensions[this.extension].react(id, chname, value);
-                                    } catch (ex) {}
-                                } else {}
-                            }
+                        }
+                        if (this.extension) {
+                            if (this.extension in this.lib.extensions) {
+                                try {
+                                    if ('react' in this.lib.extensions[this.extension]) this.lib.extensions[this.extension].react(id, chname, value);
+                                } catch (ex) {}
+                            } else {}
                         }
                     }
                 }
@@ -735,7 +721,7 @@ var Fabula = (function() {
                         context[prop] = this.lib.globals.core.appletclass(this.viewapps[prop]);
                     }
                     result = this.engine.evalExpr(this.content, context, trace);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         element.innerHTML = result;
                         resume();
                     }
@@ -752,9 +738,9 @@ var Fabula = (function() {
         local[dataname] = data; //data received
         for (var id in this.instances) {
             local[this.statename] = this.instances[id]; //old state
-            for (j = 0; j < this.resprandnames.length; j++) {
-                local[this.resprandnames[j]] = Math.random(); //random numbers (if requested)
-            }
+            // for (j = 0; j < this.resprandnames.length; j++) {
+            //     local[this.resprandnames[j]] = Math.random(); //random numbers (if requested)
+            // }
             if (this.resptimename) {
                 local[this.resptimename] = Number(new Date()); //current time (if requested)
             }
@@ -762,7 +748,7 @@ var Fabula = (function() {
             if (trace) trace.clear();
             result = this.engine.evalExpr(expr, local, trace); //new state
             if (this.debug) this.debug.receive(this.name, id, chname, local, result);
-            if (typeof result != 'undefined') {
+            if (typeof result !== 'undefined') {
                 local[this.statename] = result;
                 this.instances[id] = result;
                 trace = this.debug ? this.debug.traceview(id) : null;
@@ -772,7 +758,7 @@ var Fabula = (function() {
                         local[prop] = this.lib.globals.core.appletclass(this.viewapps[prop]);
                     }
                     result = this.engine.evalExpr(this.content, local, trace);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var element = document.getElementById(id);
                         if (element) {
                             element.innerHTML = result;
@@ -787,7 +773,7 @@ var Fabula = (function() {
                 for (j = 0; j < this.actions.length; j++) {
                     // if (trace) trace.clear();
                     result = this.engine.evalExpr(this.actions[j], local, trace);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         this.lib.queue.push(result);
                         resume();
                     }
@@ -886,8 +872,8 @@ var Fabula = (function() {
                         } else {
                             e = undefined;
                         }
-                        if (typeof cond != 'undefined') {
-                            if (typeof cond == 'boolean') {
+                        if (typeof cond !== 'undefined') {
+                            if (typeof cond === 'boolean') {
                                 if (cond) {
                                     return t;
                                 } else {
@@ -922,7 +908,7 @@ var Fabula = (function() {
                             case "'eq'":
                                 return subj1 === subj2;
                             case "'ne'":
-                                return subj1 != subj2;
+                                return subj1 !== subj2;
                             case "'gt'":
                                 return subj1 > subj2;
                             case "'ge'":
@@ -1021,7 +1007,7 @@ var Fabula = (function() {
                                     break;
                                 case ".":
                                     next();
-                                    if (res.hasOwnProperty(token)) {
+                                    if (token in res) {
                                         res = res[token];
                                     } else {
                                         throw "Undefined property";
@@ -1104,7 +1090,7 @@ var Fabula = (function() {
         var evalExpr = function(expr, context, trace) {
             var frmval = function(match, p1) {
                 var result = evalFormula(p1, context, trace ? trace.create() : null);
-                if (typeof result != 'undefined') {
+                if (typeof result !== 'undefined') {
                     return result;
                 } else {
                     throw "Fail";
@@ -1113,28 +1099,40 @@ var Fabula = (function() {
             var frmpat = /\[%(.*?)%\]/g;
 
             function conform(value, type) {
-                var i, prop, child, result, temp;
+                var i, prop, child, result, temp, count;
                 switch (type.nodeName) {
+                    case "dynamic":
+                        return value;
                     case "type":
                         return conform(value, lib.types[type.getAttribute("name")]);
                     case 'integer':
                     case 'time':
                     case 'interval':
+                        if (!value) {
+                            return 0;
+                        }
                         if (typeof value === 'number' && Math.floor(value) === value)
                             return value;
                         break;
                     case 'number':
+                        if (!value) {
+                            return 0;
+                        }
                         if (typeof value === 'number')
                             return value;
                         break;
                     case 'string':
+                        if (!value) {
+                            return '';
+                        }
                         if (typeof value === 'string')
                             return value;
                         break;
                     case 'arrayof':
+                        if (!value) {
+                            return [];
+                        }
                         if (typeof value === 'object') {
-                            if (!value)
-                                return [];
                             result = [];
                             child = firstExpr(type);
                             for (i = 0; i < value.length; i++) {
@@ -1149,9 +1147,10 @@ var Fabula = (function() {
                         }
                         break;
                     case 'dictionaryof':
+                        if (!value) {
+                            return {};
+                        }
                         if (typeof value === 'object') {
-                            if (!value)
-                                return {};
                             result = {};
                             child = firstExpr(type);
                             for (prop in value) {
@@ -1162,32 +1161,59 @@ var Fabula = (function() {
                                     result[prop] = temp;
                                 }
                             }
-                            return value;
+                            return result;
                         }
                         break;
                     case 'com':
                         if (typeof value === 'object') {
                             result = {};
+                            count = 0;
                             for (i = 0; i < type.childNodes.length; i++) {
                                 if (type.childNodes[i].nodeName === 'prop') {
                                     prop = type.childNodes[i].getAttribute('name');
                                     if (!(prop in value)) {
-                                        return undefined;
+                                        temp = conform(null, firstExpr(type.childNodes[i]));
                                     } else {
                                         temp = conform(value[prop], firstExpr(type.childNodes[i]));
-                                        if (typeof temp === "undefined") {
-                                            return undefined;
-                                        } else {
-                                            result[prop] = temp;
-                                        }
+                                    }
+                                    if (typeof temp === "undefined") {
+                                        return undefined;
+                                    } else {
+                                        result[prop] = temp;
+                                        count++;
                                     }
                                 }
                             }
+                            if (count === 0) result = null;
                             return result;
                         }
                         break;
                     case 'var':
+                        if (typeof value === 'boolean') {
+                            temp = {};
+                            for (i = 0; i < type.childNodes.length; i++) {
+                                if (type.childNodes[i].nodeName === 'prop') {
+                                    prop = type.childNodes[i].getAttribute('name');
+                                    temp[prop] = firstExpr(type.childNodes[i]);
+                                }
+                            }
+                            if (value && 'true' in temp && temp['true'].nodeName === 'com' && temp['true'].childNodes.length === 0) {
+                                return {
+                                    true: null
+                                };
+                            } else
+                            if (!value && 'false' in temp && temp['false'].nodeName === 'com' && temp['false'].childNodes.length === 0) {
+                                return {
+                                    false: null
+                                };
+                            } else {
+                                return undefined;
+                            }
+                        } else
                         if (typeof value === 'object') {
+                            if (value === null) {
+                                return undefined;
+                            }
                             result = {};
                             for (i = 0; i < type.childNodes.length; i++) {
                                 if (type.childNodes[i].nodeName === 'prop') {
@@ -1211,7 +1237,7 @@ var Fabula = (function() {
                 return undefined;
             }
 
-            if (expr.nodeType == 3) {
+            if (expr.nodeType === 3) {
                 return evalFormula(expr.nodeValue.trim(), context, trace);
             }
 
@@ -1253,20 +1279,20 @@ var Fabula = (function() {
                     var children = getChildren(expr);
                     var temp = "";
                     for (var i = 0; i < children.length; i++) {
-                        if (children[i].nodeType != 8) {
-                            if (children[i].nodeType === 1 && children[i].nodeName === "array") {
-                                var result = evalExpr(children[i], context, trace ? trace.create() : null);
-                                if (typeof result != 'undefined') {
-                                    for (var j = 0; j < result.length; j++) {
-                                        temp += result[j];
-                                    }
-                                } else {
-                                    if (trace) trace.fail('<literal>');
-                                    return undefined;
-                                }
-                            } else {
-                                temp += ser.serializeToString(children[i]);
-                            }
+                        if (children[i].nodeType !== 8) {
+                            // if (children[i].nodeType === 1 && children[i].nodeName === "array") {
+                            //     var result = evalExpr(children[i], context, trace ? trace.create() : null);
+                            //     if (typeof result !== 'undefined') {
+                            //         for (var j = 0; j < result.length; j++) {
+                            //             temp += result[j];
+                            //         }
+                            //     } else {
+                            //         if (trace) trace.fail('<literal>');
+                            //         return undefined;
+                            //     }
+                            // } else {
+                            temp += ser.serializeToString(children[i]);
+                            // }
                         }
                     }
                     if (trace) trace.success('<literal>', temp);
@@ -1276,10 +1302,10 @@ var Fabula = (function() {
                     var children = getChildren(expr);
                     var temp = "";
                     for (var i = 0; i < children.length; i++) {
-                        if (children[i].nodeType != 8) {
+                        if (children[i].nodeType !== 8) {
                             if (children[i].nodeType === 1 && children[i].nodeName === "array") {
                                 var result = evalExpr(children[i], context, trace ? trace.create() : null);
-                                if (typeof result != 'undefined') {
+                                if (typeof result !== 'undefined') {
                                     for (var j = 0; j < result.length; j++) {
                                         temp += result[j];
                                     }
@@ -1301,13 +1327,39 @@ var Fabula = (function() {
                         return undefined;
                     }
                 },
+                multitext: function(expr, context, trace) {
+                    var temp = firstExpr(findChild(expr, "size"));
+                    var str = "";
+                    var result = evalExpr(temp, context, trace ? trace.create() : null);
+                    if (typeof result !== 'undefined') {
+                        var l = result;
+                        var item = findChild(expr, "item");
+                        var idxname = item.getAttribute("index");
+                        var context2 = clone(context);
+                        for (var i = 0; i < l; i++) {
+                            context2[idxname] = i;
+                            result = evalExpr(firstExpr(item), context2, trace ? trace.create() : null);
+                            if (typeof result !== 'undefined') {
+                                str += result;
+                            } else {
+                                if (trace) trace.fail('<multitext>');
+                                return undefined;
+                            }
+                        }
+                    } else {
+                        if (trace) trace.fail('<multitext>');
+                        return undefined;
+                    }
+                    if (trace) trace.success('<multitext>', str);
+                    return str;
+                },
                 list: function(expr, context, trace) {
                     var temp = getChildren(expr);
                     var array = [];
                     array.length = temp.length;
                     for (var i = 0; i < temp.length; i++) {
                         var result = evalExpr(temp[i], context, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             array[i] = result;
                         } else {
                             if (trace) trace.fail('<list>');
@@ -1323,11 +1375,11 @@ var Fabula = (function() {
                     for (var i = 0; i < temp.length; i++) {
                         var temp2 = firstExpr(temp[i]);
                         var result = evalExpr(temp2, context, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             temp2 = result;
                             var temp3 = firstExpr(findChild(temp[i], "value"));
                             result = evalExpr(temp3, context, trace ? trace.create() : null);
-                            if (typeof result != 'undefined') {
+                            if (typeof result !== 'undefined') {
                                 obj[temp2] = result;
                             } else {
                                 if (trace) trace.fail('<entries>');
@@ -1345,7 +1397,7 @@ var Fabula = (function() {
                     var temp = firstExpr(findChild(expr, "size"));
                     var array = [];
                     var result = evalExpr(temp, context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var l = result;
                         var item = findChild(expr, "item");
                         var idxname = item.getAttribute("index");
@@ -1353,7 +1405,7 @@ var Fabula = (function() {
                         for (var i = 0; i < l; i++) {
                             context2[idxname] = i;
                             result = evalExpr(firstExpr(item), context2, trace ? trace.create() : null);
-                            if (typeof result != 'undefined') {
+                            if (typeof result !== 'undefined') {
                                 array.push(result);
                             } else {
                                 if (trace) trace.fail('<array>');
@@ -1371,7 +1423,7 @@ var Fabula = (function() {
                     var temp = firstExpr(findChild(expr, "size"));
                     var obj = {};
                     var result = evalExpr(temp, context);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         temp = result;
                         var item = findChild(expr, "entry");
                         var idxname = item.getAttribute("index");
@@ -1379,11 +1431,11 @@ var Fabula = (function() {
                         for (i = 0; i < temp; i++) {
                             context2[idxname] = i;
                             result = evalExpr(firstExpr(item), context2, trace ? trace.create() : null);
-                            if (typeof result != 'undefined') {
+                            if (typeof result !== 'undefined') {
                                 var temp2 = result; //key
                                 var temp3 = firstExpr(findChild(item, "value"));
                                 result = evalExpr(temp3, context2);
-                                if (typeof result != 'undefined') {
+                                if (typeof result !== 'undefined') {
                                     obj[temp2] = result; //value
                                 } else {
                                     if (trace) trace.fail('<dictionary>');
@@ -1404,7 +1456,7 @@ var Fabula = (function() {
                 keys: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
                     var array = [];
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         for (var prop in result) {
                             array.push(prop);
                         }
@@ -1418,7 +1470,7 @@ var Fabula = (function() {
                 values: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
                     var array = [];
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         for (var prop in result) {
                             array.push(result[prop]);
                         }
@@ -1442,7 +1494,7 @@ var Fabula = (function() {
                     var l = 0;
                     for (var i = 0; i < temp.length; i++) {
                         var result = evalExpr(temp[i], context, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             temp[i] = result;
                             l += result.length;
                         }
@@ -1465,7 +1517,7 @@ var Fabula = (function() {
                     var obj = {};
                     for (var i = 0; i < temp.length; i++) {
                         var result = evalExpr(temp[i], context, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             for (var prop in result) {
                                 obj[prop] = result[prop];
                             }
@@ -1478,14 +1530,14 @@ var Fabula = (function() {
                     var temp = firstExpr(expr);
                     var obj = {};
                     var result = evalExpr(temp, context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         for (var prop in result) {
                             obj[prop] = result[prop];
                         }
                         temp = findChildren(expr, "set");
                         for (var i = 0; i < temp.length; i++) {
                             result = evalExpr(firstExpr(temp[i]), context, trace ? trace.create() : null);
-                            if (typeof result != 'undefined') {
+                            if (typeof result !== 'undefined') {
                                 prop = temp[i].getAttribute("prop");
                                 obj[prop] = result;
                             } else {
@@ -1509,7 +1561,7 @@ var Fabula = (function() {
                     return function(x) {
                         context2[argname] = x;
                         var result = evalExpr(ret, context2, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             if (trace) trace.success('<return>', result);
                             return result;
                         } else {
@@ -1531,7 +1583,7 @@ var Fabula = (function() {
                 find: function(expr, context, trace) {
                     var temp = firstExpr(expr);
                     var result = evalExpr(temp, context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var array = result;
                         temp = findChild(expr, "such");
                         var argname = temp.getAttribute("item");
@@ -1553,7 +1605,7 @@ var Fabula = (function() {
                 filter: function(expr, context, trace) {
                     var temp = firstExpr(expr);
                     var result = evalExpr(temp, context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var array2 = [];
                         var output = {};
                         var array = result;
@@ -1577,7 +1629,7 @@ var Fabula = (function() {
                     var temp = firstExpr(expr);
                     var count = 0;
                     var result = evalExpr(temp, context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var output = {};
                         var array = result;
                         temp = findChild(expr, "such");
@@ -1604,7 +1656,7 @@ var Fabula = (function() {
                 },
                 sort: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var array = result.slice();
                         var temp = findChild(expr, "with");
                         var temp2 = temp.getAttribute("names").split(",");
@@ -1640,7 +1692,7 @@ var Fabula = (function() {
                 },
                 group: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var array, i, j, k, l;
                         var temp = findChild(expr, "with");
                         var temp2 = temp.getAttribute("names").split(",");
@@ -1653,10 +1705,12 @@ var Fabula = (function() {
                         if (result.length === 0) {
                             array = {};
                         } else {
-                            array = [result[0]];
+                            array = [
+                                [result[0]]
+                            ];
                             l = 0;
-                            bg = true;
                             for (i = 1; i < result.length; i++) {
+                                bg = true;
                                 for (k = l; k >= 0; k--) {
                                     context2[aa] = array[k][array[k].length - 1];
                                     context2[bb] = result[i];
@@ -1668,6 +1722,7 @@ var Fabula = (function() {
                                 }
                                 if (bg) {
                                     array.push([result[i]]);
+                                    l++;
                                 }
                             }
                         }
@@ -1680,11 +1735,11 @@ var Fabula = (function() {
                 },
                 delay: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         action = result;
                         var temp = findChild(expr, "by");
                         result = evalExpr(temp, context, trace ? trace.create() : null);
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             if (trace) trace.success('<delay>', true);
                             return function() {
                                 setTimeout(function() {
@@ -1704,7 +1759,7 @@ var Fabula = (function() {
                 },
                 each: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var list = result;
                         if (trace) trace.success('<each>', true);
                         return function() {
@@ -1722,7 +1777,7 @@ var Fabula = (function() {
                 send: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
                     var chname = expr.getAttribute("channel");
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var channel = lib.channels[chname];
                         if (trace) trace.success('<send channel="' + chname + '">', true);
                         return function() {
@@ -1737,7 +1792,7 @@ var Fabula = (function() {
                 },
                 get: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var url = result;
                         var succexpr = findChild(expr, "success");
                         var resultname = succexpr.getAttribute("result");
@@ -1747,19 +1802,19 @@ var Fabula = (function() {
                         return function() {
                             var xmlhttp = new XMLHttpRequest();
                             xmlhttp.onreadystatechange = function() {
-                                if (xmlhttp.readyState == 4) {
+                                if (xmlhttp.readyState === 4) {
                                     var local = clone(context);
                                     // local[applet.statename] = applet.instances[id];
-                                    if (xmlhttp.status == 200) {
+                                    if (xmlhttp.status === 200) {
                                         local[resultname] = xmlhttp.responseText;
                                         result = evalExpr(firstExpr(succexpr), local, trace ? trace.create() : null);
-                                        if (typeof result != 'undefined') {
+                                        if (typeof result !== 'undefined') {
                                             result();
                                         }
                                     } else {
                                         local[msgname] = xmlhttp.responseText;
                                         result = evalExpr(firstExpr(errexpr), local, trace ? trace.create() : null);
-                                        if (typeof result != 'undefined') {
+                                        if (typeof result !== 'undefined') {
                                             result();
                                         }
 
@@ -1778,11 +1833,11 @@ var Fabula = (function() {
                 },
                 post: function(expr, context, trace) {
                     var result = evalExpr(firstExpr(expr), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         var url = result;
                         result = evalExpr(findChild(expr, "params"), context, trace ? trace.create() : null);
                         var params;
-                        if (typeof result != 'undefined') {
+                        if (typeof result !== 'undefined') {
                             params = result;
                         } else {
                             return undefined;
@@ -1795,19 +1850,19 @@ var Fabula = (function() {
                         return function() {
                             var xmlhttp = new XMLHttpRequest();
                             xmlhttp.onreadystatechange = function() {
-                                if (xmlhttp.readyState == 4) {
+                                if (xmlhttp.readyState === 4) {
                                     var local = clone(context);
                                     // local[applet.statename] = applet.instances[id];
-                                    if (xmlhttp.status == 200) {
+                                    if (xmlhttp.status === 200) {
                                         local[resultname] = xmlhttp.responseText;
                                         result = evalExpr(succexpr, local, trace ? trace.create() : null);
-                                        if (typeof result != 'undefined') {
+                                        if (typeof result !== 'undefined') {
                                             result();
                                         }
                                     } else {
                                         local[msgname] = xmlhttp.responseText;
                                         result = evalExpr(errexpr, local, trace ? trace.create() : null);
-                                        if (typeof result != 'undefined') {
+                                        if (typeof result !== 'undefined') {
                                             result();
                                         }
 
@@ -1843,7 +1898,7 @@ var Fabula = (function() {
             }
             var algs = {
                 is: function(stmt, context, output, trace) {
-                    var result = (typeof evalExpr(firstExpr(stmt), context, trace ? trace.create() : null)) != 'undefined';
+                    var result = (typeof evalExpr(firstExpr(stmt), context, trace ? trace.create() : null)) !== 'undefined';
                     if (result) {
                         if (trace) trace.success('<is>', true);
                     } else {
@@ -1854,7 +1909,7 @@ var Fabula = (function() {
                 def: function(stmt, context, output, trace) {
                     var name = stmt.getAttribute("var");
                     var result = evalExpr(firstExpr(stmt), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         output[name] = result;
                         if (trace) trace.success('<def var="' + name + '">', true);
                         return true;
@@ -1904,7 +1959,7 @@ var Fabula = (function() {
                 unwrap: function(stmt, context, output, trace) {
                     var prop;
                     var result = evalExpr(firstExpr(stmt), context, trace ? trace.create() : null);
-                    if (typeof result != 'undefined') {
+                    if (typeof result !== 'undefined') {
                         for (prop in result) {
                             output[prop] = result[prop];
                         }
@@ -2231,11 +2286,11 @@ var Fabula = (function() {
     };
 
     return {
-        version: "0.35",
-        start: function(url, debug, id) {
+        version: "0.37",
+        start: function(url, debug, pid, uid) {
             if (debug) {
                 console.log("Fabula Interpreter v" + this.version + " (debug mode)");
-                loadLib(url, debug(id));
+                loadLib(url, debug(pid, uid));
             } else {
                 console.log("Fabula Interpreter v" + this.version);
                 loadLib(url);
