@@ -708,7 +708,7 @@ var Fabula = (function() {
                         if (this.extension) {
                             if (this.extension in this.lib.extensions) {
                                 try {
-                                    if ('react' in this.lib.extensions[this.extension]) this.lib.extensions[this.extension].react(id, chname, value);
+                                    if ('react' in this.lib.extensions[this.extension]) this.lib.extensions[this.extension].react(newid, chname, value);
                                 } catch (ex) {}
                             } else {}
                         }
